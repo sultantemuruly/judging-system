@@ -9,6 +9,10 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    volumes:
+      # Bind mount: файл лежит на хосте, контейнер читает/пишет его напрямую.
+      # Данные сохраняются при перезапуске и можно редактировать файл вручную.
+      - ./server/tournament_data.json:/app/tournament_data.json
 
   client:
     build:

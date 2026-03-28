@@ -101,9 +101,13 @@ export interface TournamentState {
   active_match_bracket_match_id: string;
 }
 
-// Global server IP / Address
-// In a real environment, this would be a config or dynamic search parameter
-const SERVER_URL = `ws://${window.location.hostname}:8080/ws`;
+// Auto-detect WebSocket protocol:
+//  - On HTTPS (production): use wss:// through nginx proxy at /ws (no port needed)
+//  - On HTTP (local dev):   use ws:// directly to Go server on :8080
+const isSecure = window.location.protocol === 'https:';
+const SERVER_URL = isSecure
+  ? `wss://${window.location.host}/ws`
+  : `ws://${window.location.hostname}:8080/ws`;
 
 let socket: WebSocket | null = null;
 type StateCallback = (state: MatchState) => void;
