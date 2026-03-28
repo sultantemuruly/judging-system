@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+.btn-active-scale:active {
+  transform: scale(0.97);
+}
