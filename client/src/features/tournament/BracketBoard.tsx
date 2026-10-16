@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Bracket, BracketMatch, CorrectionReason, TournamentState, WeightCategory } from '../../api/protocol';
 import { sendAction } from '../../api/socket';
-import { SymmetricBracketTree } from './BracketView';
+import BracketTree from './BracketTree';
 
 const reasons: { value: CorrectionReason; label: string }[] = [
   { value: 'corners_switched', label: 'Corners switched' },
@@ -44,11 +44,11 @@ export default function BracketBoard({ tournament, category, bracket }: { tourna
 
   return (
     <>
-      <SymmetricBracketTree
+      <BracketTree
         bracket={bracket}
-        category={category}
         activeBracketMatchId={tournament.active_match_bracket_match_id}
         onStartMatch={start}
+        onOpenRing={() => navigate('/')}
         onWalkover={match => setDialog({ kind: 'walkover', match })}
         onCorrect={match => setDialog({ kind: 'correct', match })}
       />

@@ -17,15 +17,15 @@ export default function FightClock({ view }: { view: FightView }) {
             <div className="text-zinc-400 text-sm font-black uppercase tracking-[0.2em] mb-1">{view.category}</div>
           )}
           <div className="flex items-center justify-center gap-6">
-            <div className="text-right flex-1 text-red-500 text-4xl font-black uppercase tracking-tight leading-none">{view.red_name || 'RED'}</div>
+            <div className="text-right flex-1 text-red-500 text-4xl [@media(max-height:800px)]:text-3xl font-black uppercase tracking-tight leading-none">{view.red_name || 'RED'}</div>
             <div className="text-zinc-600 font-black text-2xl flex-shrink-0">VS</div>
-            <div className="text-left flex-1 text-blue-500 text-4xl font-black uppercase tracking-tight leading-none">{view.blue_name || 'BLUE'}</div>
+            <div className="text-left flex-1 text-blue-500 text-4xl [@media(max-height:800px)]:text-3xl font-black uppercase tracking-tight leading-none">{view.blue_name || 'BLUE'}</div>
           </div>
         </div>
       )}
       <div className="flex items-end justify-center gap-4 mt-2">
         <div className="text-zinc-400 text-xl uppercase tracking-widest font-black pb-2 text-right w-28">R{Math.max(clock.round, 1)}/{clock.rounds}</div>
-        <div className="text-7xl md:text-8xl font-black text-white font-mono tracking-tighter leading-none">{formatMs(remainingMs)}</div>
+        <div className="text-7xl md:text-8xl [@media(max-height:800px)]:text-6xl font-black text-white font-mono tracking-tighter leading-none">{formatMs(remainingMs)}</div>
         <div className={`text-sm font-black pb-2 uppercase w-28 text-left ${secondsOut ? 'text-orange-400 animate-pulse' : isRest ? 'text-cyan-400 animate-pulse' : 'text-zinc-500'}`}>
           {secondsOut ? 'SECONDS OUT' : isRest ? 'REST' : clock.phase.replace('_', ' ')}
         </div>

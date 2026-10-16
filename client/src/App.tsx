@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from 'react-router-dom'
 import { type FightView, type TournamentState, emptyFight } from './api/protocol'
 import { connect, sessionForPath, subscribeToState, subscribeToTournament } from './api/socket'
 import OperatorScreen from './features/operator/OperatorScreen'
 import JudgeScreen from './features/judge/JudgeScreen'
 import ViewerScreen from './features/viewer/ViewerScreen'
 import BracketSetup from './features/tournament/BracketSetup'
-import BracketView from './features/tournament/BracketView'
-import AllBracketsView from './features/tournament/AllBracketsView'
+import BracketsPage from './features/tournament/BracketsPage'
 import MatchSchedule from './features/tournament/MatchSchedule'
 import BracketPrint from './features/tournament/BracketPrint'
 
@@ -46,8 +45,9 @@ function App() {
         <Route path="/judge/:id" element={<JudgeScreen view={state} />} />
         <Route path="/viewer" element={<ViewerScreen view={state} />} />
         <Route path="/tournament/setup" element={<BracketSetup tournament={tournament} />} />
-        <Route path="/tournament/bracket/:categoryId" element={<BracketView tournament={tournament} />} />
-        <Route path="/tournament/brackets/all" element={<AllBracketsView tournament={tournament} />} />
+        <Route path="/tournament/brackets" element={<BracketsPage tournament={tournament} />} />
+        <Route path="/tournament/brackets/all" element={<Navigate to="/tournament/brackets" replace />} />
+        <Route path="/tournament/bracket/:categoryId" element={<BracketsPage tournament={tournament} />} />
         <Route path="/tournament/schedule" element={<MatchSchedule tournament={tournament} />} />
         <Route path="/tournament/print/:categoryId" element={<BracketPrint tournament={tournament} />} />
       </Routes>

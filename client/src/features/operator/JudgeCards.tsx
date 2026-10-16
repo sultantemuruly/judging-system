@@ -11,10 +11,8 @@ export default function JudgeCards({ view }: { view: FightView }) {
         return (
           <div key={judge.seat} className="bg-zinc-900/80 border border-zinc-800 rounded-xl p-2 px-4 flex items-center gap-4">
             <div className="w-24 text-center flex-shrink-0 border-r border-zinc-800 pr-4">
-              <div className="text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${judge.connected ? 'bg-emerald-400' : 'bg-red-500 animate-pulse'}`} title={judge.connected ? 'connected' : 'disconnected'} />
-                JUDGE <span className="text-zinc-500 text-base">{judge.seat}</span>
-              </div>
+              <div className="text-white text-xs font-black uppercase tracking-widest">Judge {judge.seat}</div>
+              {!judge.connected && <div className="text-[10px] text-red-400 font-bold uppercase animate-pulse">Offline</div>}
               {judge.decision_needed && <div className="text-[10px] text-yellow-400 font-bold uppercase animate-pulse">Deciding…</div>}
               {judge.verdict && (
                 <div className={`text-[11px] font-black uppercase ${winnerTextColor(judge.verdict)}`}>

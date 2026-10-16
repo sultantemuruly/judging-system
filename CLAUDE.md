@@ -63,7 +63,7 @@ client/src/
     operator/   operator dashboard, split into small components
     viewer/     spectator screen
     tournament/ setup, brackets, schedule, bracket PDF (/tournament/print/:categoryId)
-  shared/       ScoreDiffBar, ConfirmDialog, server-synced countdown hooks, result labels
+  shared/       NavBar (operator pages), ScoreDiffBar, ConfirmDialog, server-synced countdown hooks, result labels
 ```
 - Components only render server state and dispatch actions; no business rules in TSX (e.g. "next warning disqualifies" comes from the view).
 - One display component per concept (e.g. the score-difference bar), not copies per page.

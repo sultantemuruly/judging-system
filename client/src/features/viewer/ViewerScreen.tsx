@@ -1,5 +1,5 @@
 import type { Corner, FightView } from '../../api/protocol';
-import { AlertTriangle, Shield, Eye } from 'lucide-react';
+import { AlertTriangle, Shield } from 'lucide-react';
 import ScoreDiffBar from '../../shared/ScoreDiffBar';
 import { useCountdown, useRemaining } from '../../shared/useCountdown';
 import { cornerName, formatMs, penaltySummary, resultBannerStyle, resultLabel, winnerTextColor } from '../../shared/fightText';
@@ -35,21 +35,15 @@ export default function ViewerScreen({ view }: Props) {
       {/* Header */}
       <div className="w-full max-w-7xl flex justify-between items-center mb-8 border-b border-zinc-800 pb-4">
         <h1 className="text-3xl font-black text-white tracking-widest uppercase">
-          Low Kick <span className="text-zinc-500 font-light">Live</span>
+          Kickboxing <span className="text-zinc-500 font-light">Live</span>
         </h1>
-        <div className="flex items-center gap-3 text-zinc-500">
-          <Eye size={20} />
-          <span className="text-sm font-bold uppercase tracking-widest">Spectator View</span>
-        </div>
+        {view.category && <div className="text-zinc-400 text-sm font-bold uppercase tracking-widest">{view.category}</div>}
       </div>
 
       <div className="flex-1 w-full max-w-7xl flex flex-col">
 
         {(view.red_name || view.blue_name) && (
           <div className="text-center mb-6">
-            {view.category && (
-              <div className="text-zinc-500 text-xs font-bold uppercase tracking-[0.25em] mb-3">{view.category}</div>
-            )}
             <div className="flex items-center justify-center gap-8">
               <div className="text-red-500 text-3xl font-black uppercase drop-shadow-[0_0_20px_rgba(239,68,68,0.3)]">
                 {view.red_name || 'RED'}
