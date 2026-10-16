@@ -111,6 +111,8 @@ var fightEventTypes = map[string]match.EventType{
 	"UNDO_REFEREE_ACTION": match.RefereeActionUndone,
 	"JUDGE_DECISION":      match.JudgeDecision,
 	"CONFIRM_RESULT":      match.ResultConfirmed,
+	"MEDICAL_START":       match.MedicalTimeoutStarted,
+	"MEDICAL_STOP":        match.MedicalTimeoutStopped,
 }
 
 // actionToEvent turns a client action into a fight event; the ring stamps the time.
@@ -205,9 +207,9 @@ func applyEvent(action string, e match.Event) error {
 }
 
 // releaseBracketMatch puts the bracket match of a fight that was replaced
-// before it finished back to PENDING.
+// before its result was confirmed back to PENDING.
 func releaseBracketMatch(hub *ws.Hub, old match.Fight) {
-	if old.Config.Bracket == nil || old.Result().Final {
+	if old.Config.Bracket == nil || old.Result().Confirmed {
 		return
 	}
 	ReleaseBracketMatch(hub, *old.Config.Bracket)

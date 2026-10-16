@@ -109,9 +109,13 @@ func TestSpec_S07_FourthWarningDQ(t *testing.T) {
 	s.endRound()
 	s.advance(60_000)
 	s.startRound()
-	for range 4 {
+	for range 3 {
 		s.referee(OfficialWarning, Blue)
 	}
+	if !s.view().Corners[Blue].NextWarningDQ {
+		t.Fatal("after 3 warnings the view must flag that the next one disqualifies")
+	}
+	s.referee(OfficialWarning, Blue)
 
 	s.wantResult(Red, DQ, "")
 	if p := s.view().Clock.Phase; p != Paused {

@@ -40,3 +40,14 @@ export function useCountdown(clock: ClockView): Countdown {
   }, [ticking]);
   return countdownAt(clock, now);
 }
+
+/** Milliseconds until a server-time deadline (0 if none, at most maxMs), re-rendering every 250 ms. */
+export function useRemaining(endsAt: number, maxMs: number): number {
+  const [now, setNow] = useState(serverNow);
+  useEffect(() => {
+    if (!endsAt) return;
+    const id = window.setInterval(() => setNow(serverNow()), 250);
+    return () => clearInterval(id);
+  }, [endsAt]);
+  return endsAt ? Math.min(maxMs, Math.max(0, endsAt - now)) : 0;
+}

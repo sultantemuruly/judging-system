@@ -24,7 +24,7 @@ type Options struct {
 	OpenLog func(fightID string) (Log, error)
 	// OnChange runs after every accepted event, outside the ring's lock.
 	OnChange func()
-	// OnDecided runs once when a fight's result becomes final, outside the lock.
+	// OnDecided runs once when a fight's result is confirmed (§7), outside the lock.
 	OnDecided func(match.Fight)
 }
 
@@ -118,7 +118,7 @@ func (r *Ring) Apply(e match.Event) error {
 
 func (r *Ring) apply(e match.Event) error {
 	r.mu.Lock()
-	wasFinal := r.fight.Result().Final
+	wasConfirmed := r.fight.Result().Confirmed
 	next, err := match.Apply(r.fight, e)
 	if err != nil {
 		r.mu.Unlock()
@@ -132,7 +132,7 @@ func (r *Ring) apply(e match.Event) error {
 	}
 	r.fight = next
 	r.armLocked()
-	decided := !wasFinal && next.Result().Final
+	decided := !wasConfirmed && next.Result().Confirmed
 	r.mu.Unlock()
 
 	r.opts.OnChange()

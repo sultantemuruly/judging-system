@@ -61,6 +61,17 @@ func TestTiedBracketFightAdvancesMajorityNotBlue(t *testing.T) {
 	act(hub, "JUDGE_DECISION", map[string]any{"seat": 2, "corner": "Blue"})
 	act(hub, "JUDGE_DECISION", map[string]any{"seat": "3", "corner": "Red"})
 
+	// The result is final, but the bracket waits for the operator's confirmation (§7).
+	if r := theRing.View().Result; !r.Final || r.Confirmed {
+		t.Fatalf("result = %+v, want final and unconfirmed", r)
+	}
+	if got := tournamentState.Brackets[catID].Matches[0].Status; got != BracketMatchActive {
+		t.Fatalf("before confirmation: status = %s, want ACTIVE", got)
+	}
+	if err := act(hub, "CONFIRM_RESULT", nil); err != nil {
+		t.Fatal(err)
+	}
+
 	got := tournamentState.Brackets[catID].Matches[0]
 	if got.Status != BracketMatchCompleted || got.WinnerID != m.FighterRedID {
 		t.Fatalf("bracket match = %+v, want COMPLETED with the Red fighter", got)

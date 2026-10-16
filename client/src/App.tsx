@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { type FightView, type TournamentState, emptyFight } from './api/protocol'
 import { connect, sessionForPath, subscribeToState, subscribeToTournament } from './api/socket'
-import Dashboard from './Dashboard'
+import OperatorScreen from './features/operator/OperatorScreen'
 import JudgeScreen from './features/judge/JudgeScreen'
-import ViewerScreen from './ViewerScreen'
+import ViewerScreen from './features/viewer/ViewerScreen'
 import BracketSetup from './BracketSetup'
 import BracketView from './BracketView'
 import AllBracketsView from './AllBracketsView'
@@ -39,7 +39,7 @@ function App() {
     <BrowserRouter>
       <SessionSync />
       <Routes>
-        <Route path="/" element={<Dashboard view={state} tournament={tournament} />} />
+        <Route path="/" element={<OperatorScreen view={state} tournament={tournament} />} />
         <Route path="/judge/:id" element={<JudgeScreen view={state} />} />
         <Route path="/viewer" element={<ViewerScreen view={state} />} />
         <Route path="/tournament/setup" element={<BracketSetup tournament={tournament} />} />

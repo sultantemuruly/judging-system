@@ -1,16 +1,19 @@
-import type { Corner, FightView } from './api/protocol';
+import type { Corner, FightView } from '../../api/protocol';
 import { AlertTriangle, Shield, Eye } from 'lucide-react';
-import ScoreDiffBar from './shared/ScoreDiffBar';
-import { useCountdown } from './shared/useCountdown';
-import { cornerName, formatMs, penaltySummary, resultBannerStyle, resultLabel, winnerTextColor } from './shared/fightText';
+import ScoreDiffBar from '../../shared/ScoreDiffBar';
+import { useCountdown, useRemaining } from '../../shared/useCountdown';
+import { cornerName, formatMs, penaltySummary, resultBannerStyle, resultLabel, winnerTextColor } from '../../shared/fightText';
 
 interface Props {
   view: FightView;
 }
 
 export default function ViewerScreen({ view }: Props) {
-  const { clock, corners, result } = view;
+  const { clock, corners, result, medical } = view;
   const { remainingMs, isRest, secondsOut } = useCountdown(clock);
+  const medicalLeft = useRemaining(medical.active ? medical.ends_at : 0, 120_000);
+  // The winner is shown only after the operator confirms the result (§7).
+  const showWinner = result.final && result.confirmed;
 
   const statusColor =
     isRest ? 'text-cyan-400' :
@@ -24,7 +27,7 @@ export default function ViewerScreen({ view }: Props) {
     { key: 'red', text: penaltySummary('Red', corners.Red), className: 'text-red-400 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]' },
     { key: 'blue', text: penaltySummary('Blue', corners.Blue), className: 'text-blue-400 drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' },
   ].filter(p => p.text);
-  const showScores = view.live_scores || result.final;
+  const showScores = view.live_scores || showWinner;
 
   return (
     <div className="min-h-screen flex flex-col items-center bg-zinc-950 p-6 overscroll-none">
@@ -75,6 +78,14 @@ export default function ViewerScreen({ view }: Props) {
             {clock.phase === 'RUNNING' && '● '}
             {secondsOut ? 'SECONDS OUT' : isRest ? 'REST PHASE' : clock.phase.replace('_', ' ')}
           </div>
+          {medical.active && (
+            <div className="mt-4 inline-flex items-center gap-4 bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 rounded-2xl px-6 py-2 font-black text-xl">
+              MEDICAL TIMEOUT <span className="font-mono text-3xl text-white">{formatMs(medicalLeft)}</span>
+            </div>
+          )}
+          {result.final && !result.confirmed && (
+            <div className="mt-4 text-zinc-400 text-lg font-black uppercase tracking-[0.3em] animate-pulse">Decision pending…</div>
+          )}
         </div>
 
         {/* Knockdowns + Warnings */}
@@ -94,7 +105,7 @@ export default function ViewerScreen({ view }: Props) {
                 <span className="text-white font-black text-3xl">{corners.Blue.knockdowns_round}</span>
               </div>
             </div>
-            {alertCorner && !result.final && (
+            {alertCorner && !result.final && corners[alertCorner].knockdowns_round > 0 && (
               <div className="mt-3 text-xs text-yellow-400 font-bold animate-pulse text-center">
                 ⚠ {alertCorner.toUpperCase()}: {corners[alertCorner].knockdowns_round} knockdowns this round, {corners[alertCorner].knockdowns_fight} in the fight
               </div>
@@ -133,7 +144,8 @@ export default function ViewerScreen({ view }: Props) {
 
             {view.judges.map((judge) => {
               const diff = judge.total.red - judge.total.blue;
-              const pick = judge.verdict || judge.leader;
+              // After a stoppage judges have no verdict; don't keep showing who led.
+              const pick = judge.verdict || (result.final ? '' : judge.leader);
               return (
                 <div key={judge.seat} className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-5 backdrop-blur-sm">
                   <div className="flex items-center gap-4 mb-4">
@@ -156,7 +168,7 @@ export default function ViewerScreen({ view }: Props) {
 
                     <div className="w-20 text-center flex-shrink-0">
                       <div className="text-zinc-600 text-[10px] font-bold uppercase tracking-widest mb-1">
-                        {judge.verdict ? 'Verdict' : 'Leading'}
+                        {judge.verdict ? 'Verdict' : result.final ? '' : 'Leading'}
                       </div>
                       <div className={`text-lg font-black ${winnerTextColor(pick)}`}>
                         {judge.decision_needed ? '…' : pick || '—'}
@@ -193,16 +205,18 @@ export default function ViewerScreen({ view }: Props) {
           </div>
         )}
 
-        {result.final && (
-          <div className={`mt-10 text-center p-12 rounded-3xl max-w-4xl mx-auto w-full shadow-2xl border-2 animate-in zoom-in duration-500 ${resultBannerStyle(result.winner)}`}>
-            <div className="text-xl font-bold mb-4 uppercase tracking-[0.4em] text-zinc-400/80">
-              🏆 Match Winner 🏆
-            </div>
-            <div className={`text-7xl font-black uppercase tracking-wider ${winnerTextColor(result.winner)}`}>
-              {cornerName(view, result.winner)}
-            </div>
-            <div className="text-zinc-300 text-2xl font-bold mt-8 uppercase tracking-[0.2em] bg-black/20 inline-block px-10 py-4 rounded-full border border-white/5 shadow-inner">
-              {resultLabel(result)}
+        {showWinner && (
+          <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-8">
+            <div className={`text-center p-12 rounded-3xl max-w-4xl w-full shadow-2xl border-2 animate-in zoom-in duration-500 ${resultBannerStyle(result.winner)}`}>
+              <div className="text-xl font-bold mb-4 uppercase tracking-[0.4em] text-zinc-400/80">
+                🏆 Match Winner 🏆
+              </div>
+              <div className={`text-7xl font-black uppercase tracking-wider ${winnerTextColor(result.winner)}`}>
+                {cornerName(view, result.winner)}
+              </div>
+              <div className="text-zinc-300 text-2xl font-bold mt-8 uppercase tracking-[0.2em] bg-black/20 inline-block px-10 py-4 rounded-full border border-white/5 shadow-inner">
+                {resultLabel(result)}
+              </div>
             </div>
           </div>
         )}

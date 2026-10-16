@@ -137,3 +137,46 @@ func TestReplayRebuildsTheSameView(t *testing.T) {
 		t.Fatalf("replayed view differs:\n got %+v\nwant %+v", got, want)
 	}
 }
+
+func TestActionLogNumbersActiveWarnings(t *testing.T) {
+	s := newScript(t, FightConfig{})
+	s.startRound()
+	s.referee(OfficialWarning, Red)
+	s.referee(OfficialWarning, Red)
+	second := s.f.Events[len(s.f.Events)-1].ID
+	s.must(Event{Type: RefereeActionUndone, TargetID: second})
+	s.referee(OfficialWarning, Red)
+	s.referee(OfficialWarning, Red)
+	s.referee(Knockdown, Blue)
+
+	type row struct {
+		n, deduction int
+		undone       bool
+	}
+	var got []row
+	for _, a := range s.view().Actions {
+		got = append(got, row{a.WarningNumber, a.Deduction, a.Undone})
+	}
+	want := []row{{1, 0, false}, {0, 0, true}, {2, 3, false}, {3, 3, false}, {0, 1, false}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("log = %+v, want %+v", got, want)
+	}
+}
+
+func TestMedicalTimeoutStopsTheClock(t *testing.T) {
+	s := newScript(t, FightConfig{})
+	s.reject(Event{Type: MedicalTimeoutStarted}, ErrClockState)
+	s.startRound()
+	s.advance(10_000)
+	s.must(Event{Type: MedicalTimeoutStarted})
+	if v := s.view(); v.Clock.Phase != Paused || !v.Medical.Active || v.Medical.EndsAt != s.now+MedicalTimeoutMs {
+		t.Fatalf("view = %+v %+v, want paused with a 2-minute medical timer", v.Clock, v.Medical)
+	}
+	s.reject(Event{Type: ClockResumed}, ErrMedicalTimeoutBusy)
+	s.advance(60_000)
+	s.must(Event{Type: MedicalTimeoutStopped})
+	s.must(Event{Type: ClockResumed})
+	if v := s.view(); v.Medical.Active || v.Clock.ElapsedMs != 10_000 {
+		t.Fatalf("after timeout: %+v %+v, want round time unchanged by the timeout", v.Medical, v.Clock)
+	}
+}

@@ -671,7 +671,7 @@ func StartBracketMatch(hub *ws.Hub, categoryID, bracketMatchID string) bool {
 		return false
 	}
 	// The replaced fight's bracket match goes back to the queue unless it was decided.
-	if old.Config.Bracket != nil && *old.Config.Bracket != ref && !old.Result().Final {
+	if old.Config.Bracket != nil && *old.Config.Bracket != ref && !old.Result().Confirmed {
 		releaseBracketMatchLocked(*old.Config.Bracket)
 	}
 	return true

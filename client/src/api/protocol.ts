@@ -43,6 +43,7 @@ export interface CornerView {
   knockdowns_fight: number;
   knockdown_alert: boolean;
   knockdown_limit: boolean;
+  next_warning_dq: boolean;
 }
 
 export type RefereeActionType = 'OfficialWarning' | 'MinusPoint' | 'Knockdown' | 'Stoppage';
@@ -55,6 +56,9 @@ export interface ActionView {
   round: number;
   at: number;
   undone: boolean;
+  warning_number?: number;
+  deduction?: number;
+  disqualifies?: boolean;
 }
 
 export interface MedicalView {
@@ -93,7 +97,7 @@ export interface FightView {
 
 const emptyCorner: CornerView = {
   warnings: 0, minus_points: 0, penalty: 0,
-  knockdowns_round: 0, knockdowns_fight: 0, knockdown_alert: false, knockdown_limit: false,
+  knockdowns_round: 0, knockdowns_fight: 0, knockdown_alert: false, knockdown_limit: false, next_warning_dq: false,
 };
 
 export const emptyFight: FightView = {

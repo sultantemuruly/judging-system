@@ -54,6 +54,7 @@ type CornerView struct {
 	KnockdownsFight int  `json:"knockdowns_fight"`
 	KnockdownAlert  bool `json:"knockdown_alert"` // one more knockdown in this round reaches the limit
 	KnockdownLimit  bool `json:"knockdown_limit"` // limit reached: the operator should stop the fight (RSC)
+	NextWarningDQ   bool `json:"next_warning_dq"` // one more official warning disqualifies (§4)
 }
 
 // ActionView is one referee action, for the operator's log and undo.
@@ -65,6 +66,12 @@ type ActionView struct {
 	Round  int       `json:"round"`
 	At     int64     `json:"at"`
 	Undone bool      `json:"undone"`
+	// WarningNumber is the official warning's place on the ladder (§4), counting only active warnings.
+	WarningNumber int `json:"warning_number,omitempty"`
+	// Deduction is what the action costs the corner at every judge.
+	Deduction int `json:"deduction,omitempty"`
+	// Disqualifies is set on a 4th warning.
+	Disqualifies bool `json:"disqualifies,omitempty"`
 }
 
 type MedicalView struct {
@@ -115,22 +122,47 @@ func (f Fight) View(now int64) FightView {
 			KnockdownsRound: pick(t.kdRound[cur], c),
 			KnockdownsFight: pick(t.kdFight, c),
 		}
+		cv.NextWarningDQ = cv.Warnings == WarningsForDQ-1
 		cv.KnockdownLimit = cv.KnockdownsRound >= f.Config.KDLimitRound || cv.KnockdownsFight >= f.Config.KDLimitFight
 		cv.KnockdownAlert = !cv.KnockdownLimit && (cv.KnockdownsRound == f.Config.KDLimitRound-1 || cv.KnockdownsFight == f.Config.KDLimitFight-1)
 		v.Corners[c] = cv
 	}
 
-	for _, e := range f.Events {
-		switch e.Type {
-		case OfficialWarning, MinusPoint, Knockdown, Stoppage:
-			v.Actions = append(v.Actions, ActionView{ID: e.ID, Type: e.Type, Corner: e.Corner, Method: e.Method, Round: e.Round, At: e.At, Undone: f.undone[e.ID]})
-		}
-	}
+	v.Actions = f.actionLog()
 
 	if end, ok := f.MedicalEndsAt(); ok {
 		v.Medical = MedicalView{Active: true, StartedAt: f.medical, EndsAt: end}
 	}
 	return v
+}
+
+// actionLog lists referee actions with their effect, undone ones included.
+func (f Fight) actionLog() []ActionView {
+	out := []ActionView{}
+	var warnings Score
+	for _, e := range f.Events {
+		a := ActionView{ID: e.ID, Type: e.Type, Corner: e.Corner, Method: e.Method, Round: e.Round, At: e.At, Undone: f.undone[e.ID]}
+		switch e.Type {
+		case OfficialWarning:
+			if !a.Undone {
+				warnings.add(e.Corner, 1)
+				a.WarningNumber = pick(warnings, e.Corner)
+				if a.WarningNumber == 2 || a.WarningNumber == 3 {
+					a.Deduction = MinusPointValue
+				}
+				a.Disqualifies = a.WarningNumber >= WarningsForDQ
+			}
+		case MinusPoint:
+			a.Deduction = MinusPointValue
+		case Knockdown:
+			a.Deduction = KnockdownValue
+		case Stoppage:
+		default:
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 func (f Fight) clockView() ClockView {
