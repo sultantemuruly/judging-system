@@ -1,5 +1,7 @@
 package main
 
+import "judging-server/internal/match"
+
 // TournamentFighter represents a fighter registered in a weight category
 type TournamentFighter struct {
 	ID                 string `json:"id"`
@@ -17,7 +19,30 @@ type WeightCategory struct {
 	Gender     string              `json:"gender"`     // "Men" or "Cadets"
 	Sex        string              `json:"sex"`        // "male" or "female"
 	Discipline string              `json:"discipline"` // "low-kick", "full-contact", "k-1"
+	Format     FightFormat         `json:"format"`
 	Fighters   []TournamentFighter `json:"fighters"`
+}
+
+// FightFormat is a category's fight format (§2) and knockdown limits (§5).
+type FightFormat struct {
+	Rounds       int `json:"rounds"`
+	RoundSeconds int `json:"round_seconds"`
+	RestSeconds  int `json:"rest_seconds"`
+	KDLimitRound int `json:"kd_limit_round"`
+	KDLimitFight int `json:"kd_limit_fight"`
+}
+
+func (f FightFormat) fightConfig() match.FightConfig {
+	return match.FightConfig{
+		Rounds: f.Rounds, RoundSeconds: f.RoundSeconds, RestSeconds: f.RestSeconds,
+		KDLimitRound: f.KDLimitRound, KDLimitFight: f.KDLimitFight,
+	}.WithDefaults()
+}
+
+// normalized fills unset values with the defaults.
+func (f FightFormat) normalized() FightFormat {
+	c := f.fightConfig()
+	return FightFormat{c.Rounds, c.RoundSeconds, c.RestSeconds, c.KDLimitRound, c.KDLimitFight}
 }
 
 // BracketMatchStatus represents the status of a bracket match

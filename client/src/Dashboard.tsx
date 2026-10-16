@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type TournamentState, sendAction } from './socket';
 import type { Corner, FightView } from './api/protocol';
@@ -15,28 +15,19 @@ interface Props {
 export default function Dashboard({ view, tournament }: Props) {
   const navigate = useNavigate();
   const { clock, corners, result } = view;
-  const { remainingMs, isRest } = useCountdown(clock);
+  const { remainingMs, isRest, secondsOut } = useCountdown(clock);
 
-  const [showNewFightConfirm, setShowNewFightConfirm] = useState(false);
+  const [showNewFight, setShowNewFight] = useState(false);
   const [hiddenBannerFor, setHiddenBannerFor] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
+  const [roundsInput, setRoundsInput] = useState(3);
   const [roundDurationInput, setRoundDurationInput] = useState(120);
   const [restDurationInput, setRestDurationInput] = useState(60);
 
-  // Until the server runs the clock itself, this tab ends the round at 0:00.
-  const endSentFor = useRef('');
-  useEffect(() => {
-    const key = `${view.fight_id}-${clock.round}`;
-    if (clock.phase === 'RUNNING' && remainingMs === 0 && endSentFor.current !== key) {
-      endSentFor.current = key;
-      sendAction('END_ROUND');
-    }
-  }, [clock.phase, clock.round, remainingMs, view.fight_id]);
-
-  const openSettings = () => {
+  const openNewFight = () => {
+    setRoundsInput(clock.rounds);
     setRoundDurationInput(clock.round_ms / 1000);
     setRestDurationInput(clock.rest_ms / 1000);
-    setShowSettings(true);
+    setShowNewFight(true);
   };
 
   const isRoundActive = clock.phase === 'RUNNING' || clock.phase === 'PAUSED';
@@ -59,13 +50,6 @@ export default function Dashboard({ view, tournament }: Props) {
             Kickboxing <span className="text-zinc-500 font-light">Judging</span>
           </h1>
           <button
-            onClick={openSettings}
-            className="px-3 py-1.5 bg-zinc-800 rounded-lg hover:bg-zinc-700 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold text-zinc-400 border border-zinc-700"
-          >
-            <Settings size={13} />
-            Settings
-          </button>
-          <button
             onClick={() => navigate('/tournament/setup')}
             className="px-3 py-1.5 bg-zinc-800 rounded-lg hover:bg-zinc-700 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold text-zinc-400 border border-zinc-700"
           >
@@ -84,7 +68,7 @@ export default function Dashboard({ view, tournament }: Props) {
         <div className="flex gap-3 items-center">
           <button
             className="px-4 py-2 bg-zinc-800 rounded-xl hover:bg-zinc-700 transition-all cursor-pointer flex items-center gap-2 text-sm font-bold text-zinc-300 border border-zinc-700"
-            onClick={() => setShowNewFightConfirm(true)}
+            onClick={openNewFight}
           >
             <RotateCcw size={16} />
             New Fight
@@ -127,89 +111,51 @@ export default function Dashboard({ view, tournament }: Props) {
         </div>
       </div>
 
-      {/* New Fight Confirmation Dialog */}
-      {showNewFightConfirm && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
-            <h2 className="text-xl font-black text-white mb-3">Start New Fight?</h2>
-            <p className="text-zinc-400 mb-6">This will reset all scores, warnings, and knockdowns. An unfinished bracket match goes back to the queue.</p>
+      {/* New standalone fight: reset and pick its format (bracket fights use their category's format) */}
+      {showNewFight && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+            <h2 className="text-xl font-black text-white mb-2 flex items-center gap-2">
+              <Settings size={20} className="text-zinc-400" /> New Fight
+            </h2>
+            <p className="text-zinc-400 text-sm mb-6">Resets scores, warnings and knockdowns. An unfinished bracket match goes back to the queue. Bracket fights are started from the bracket and use their category's format.</p>
+
+            <div className="grid grid-cols-3 gap-3 mb-8">
+              <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider">Rounds
+                <select value={roundsInput} onChange={(e) => setRoundsInput(Number(e.target.value))}
+                  className="mt-2 w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg px-3 py-2.5 outline-none focus:border-emerald-500">
+                  {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider">Round
+                <select value={roundDurationInput} onChange={(e) => setRoundDurationInput(Number(e.target.value))}
+                  className="mt-2 w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg px-3 py-2.5 outline-none focus:border-emerald-500">
+                  {[60, 90, 120, 150, 180].map(n => <option key={n} value={n}>{formatMs(n * 1000)}</option>)}
+                </select>
+              </label>
+              <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider">Rest
+                <select value={restDurationInput} onChange={(e) => setRestDurationInput(Number(e.target.value))}
+                  className="mt-2 w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg px-3 py-2.5 outline-none focus:border-emerald-500">
+                  {[30, 45, 60, 90, 120].map(n => <option key={n} value={n}>{formatMs(n * 1000)}</option>)}
+                </select>
+              </label>
+            </div>
+
             <div className="flex gap-3 justify-end">
               <button
                 className="px-5 py-2.5 bg-zinc-800 text-zinc-300 rounded-xl font-bold hover:bg-zinc-700 transition-all cursor-pointer"
-                onClick={() => setShowNewFightConfirm(false)}
+                onClick={() => setShowNewFight(false)}
               >
                 Cancel
               </button>
               <button
                 className="px-5 py-2.5 bg-red-600 text-white rounded-xl font-bold hover:bg-red-500 transition-all cursor-pointer"
                 onClick={() => {
-                  sendAction('NEW_FIGHT');
-                  setShowSettings(false);
-                  setShowNewFightConfirm(false);
+                  sendAction('NEW_FIGHT', { rounds: roundsInput, round_seconds: roundDurationInput, rest_seconds: restDurationInput });
+                  setShowNewFight(false);
                 }}
               >
                 Reset & Start New Fight
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Settings Dialog */}
-      {showSettings && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-8 max-w-sm w-full shadow-2xl">
-            <h2 className="text-xl font-black text-white mb-6 flex items-center gap-2">
-              <Settings size={20} className="text-zinc-400" /> Match Settings
-            </h2>
-
-            <div className="space-y-4 mb-8">
-              <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Round Duration</label>
-                <select
-                  value={roundDurationInput}
-                  onChange={(e) => setRoundDurationInput(Number(e.target.value))}
-                  className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg px-4 py-2.5 outline-none focus:border-emerald-500 transition-colors"
-                >
-                  <option value={60}>1 Minute (60s)</option>
-                  <option value={90}>1.5 Minutes (90s)</option>
-                  <option value={120}>2 Minutes (120s)</option>
-                  <option value={150}>2.5 Minutes (150s)</option>
-                  <option value={180}>3 Minutes (180s)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Rest Duration</label>
-                <select
-                  value={restDurationInput}
-                  onChange={(e) => setRestDurationInput(Number(e.target.value))}
-                  className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg px-4 py-2.5 outline-none focus:border-emerald-500 transition-colors"
-                >
-                  <option value={30}>30 Seconds</option>
-                  <option value={45}>45 Seconds</option>
-                  <option value={60}>1 Minute (60s)</option>
-                  <option value={90}>1.5 Minutes (90s)</option>
-                  <option value={120}>2 Minutes (120s)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex gap-3 justify-end">
-              <button
-                className="px-5 py-2.5 bg-zinc-800 text-zinc-300 rounded-xl font-bold hover:bg-zinc-700 transition-all cursor-pointer"
-                onClick={() => setShowSettings(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-500 transition-all cursor-pointer"
-                onClick={() => {
-                  sendAction('UPDATE_MATCH_SETTINGS', { round_duration: roundDurationInput, rest_duration: restDurationInput });
-                  setShowSettings(false);
-                }}
-              >
-                Save Limits
               </button>
             </div>
           </div>
@@ -243,7 +189,7 @@ export default function Dashboard({ view, tournament }: Props) {
               {formatMs(remainingMs)}
             </div>
             <div className={`text-sm md:text-base font-black pb-2 uppercase w-24 text-left ${isRest ? 'text-cyan-400 animate-pulse' : 'text-zinc-500'}`}>
-              {isRest ? 'REST PHASE' : clock.phase.replace('_', ' ')}
+              {secondsOut ? 'SECONDS OUT' : isRest ? 'REST PHASE' : clock.phase.replace('_', ' ')}
             </div>
           </div>
         </div>

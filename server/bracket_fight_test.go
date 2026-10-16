@@ -3,6 +3,9 @@ package main
 import (
 	"encoding/json"
 	"testing"
+	"time"
+
+	"judging-server/internal/clock"
 )
 
 // testHub runs a hub whose broadcasts go nowhere, and isolates the test from
@@ -10,11 +13,11 @@ import (
 func testHub(t *testing.T) *Hub {
 	t.Helper()
 	t.Chdir(t.TempDir())
-	tournamentMutex.Lock()
-	tournamentState = TournamentState{Categories: []WeightCategory{}, Brackets: map[string]*Bracket{}}
-	tournamentMutex.Unlock()
-	hub := newHub()
-	go hub.run()
+	hub, err := setup("data", clock.NewFake(time.UnixMilli(1_700_000_000_000)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(theRing.Close)
 	return hub
 }
 
@@ -80,5 +83,43 @@ func TestNewFightReleasesUnfinishedBracketMatch(t *testing.T) {
 	act(hub, "STOPPAGE", map[string]string{"corner": "Blue", "method": "KO"})
 	if got := tournamentState.Brackets[catID].Matches[0]; got.Status != BracketMatchPending || got.WinnerID != "" {
 		t.Fatalf("bracket match = %+v, want untouched", got)
+	}
+}
+
+func TestBracketFightUsesCategoryFormat(t *testing.T) {
+	hub := testHub(t)
+	act(hub, "ADD_CATEGORY", map[string]any{"name": "U14", "rounds": 2, "round_seconds": 90})
+	catID := tournamentState.Categories[0].ID
+	if f := tournamentState.Categories[0].Format; f.Rounds != 2 || f.RoundSeconds != 90 || f.RestSeconds != 60 || f.KDLimitRound != 3 {
+		t.Fatalf("format = %+v, want 2×90 s with default rest and limits", f)
+	}
+	act(hub, "ADD_FIGHTER", map[string]any{"category_id": catID, "fighter": map[string]string{"name": "A"}})
+	act(hub, "ADD_FIGHTER", map[string]any{"category_id": catID, "fighter": map[string]string{"name": "B"}})
+	act(hub, "GENERATE_BRACKET", map[string]string{"category_id": catID})
+	m := tournamentState.Brackets[catID].Matches[0]
+	act(hub, "START_BRACKET_MATCH", map[string]string{"category_id": catID, "match_id": m.ID})
+
+	if c := theRing.View().Clock; c.Rounds != 2 || c.RoundMs != 90_000 {
+		t.Fatalf("fight clock = %+v, want 2 rounds of 90 s", c)
+	}
+}
+
+func TestRestartRestoresFightAndTournament(t *testing.T) {
+	hub := testHub(t)
+	catID, _ := startTwoFighterBracket(t, hub)
+	act(hub, "START_ROUND", nil)
+	act(hub, "REGISTER_HIT", map[string]any{"seat": 1, "corner": "Red"})
+	theRing.Close()
+
+	if _, err := setup("data", clock.NewFake(time.UnixMilli(1_700_000_100_000))); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(theRing.Close)
+	v := theRing.View()
+	if v.Clock.Phase != "PAUSED" || v.Judges[0].Total.Red != 1 || v.Bracket == nil || v.Bracket.CategoryID != catID {
+		t.Fatalf("restored view = %+v, want the paused bracket fight with 1 red hit", v)
+	}
+	if len(tournamentState.Categories) != 1 || tournamentState.Brackets[catID] == nil {
+		t.Fatal("tournament not restored")
 	}
 }

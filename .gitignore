@@ -94,3 +94,6 @@ $RECYCLE.BIN/
 *.tmp
 *.swp
 *~
+
+# Server data directory (fight logs, tournament)
+/server/data/

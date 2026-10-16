@@ -6,57 +6,33 @@ import (
 	"log"
 	"math"
 	"math/rand"
-	"os"
 	"sync"
 	"time"
 
 	"judging-server/internal/match"
 )
 
-const tournamentDataFile = "tournament_data.json"
-
 var (
 	tournamentMutex sync.RWMutex
 	tournamentState TournamentState
 )
 
-func initTournament() {
-	if err := loadTournamentState(); err != nil {
-		log.Printf("No saved tournament state found, starting fresh: %v", err)
-		tournamentState = TournamentState{
-			Categories: []WeightCategory{},
-			Brackets:   make(map[string]*Bracket),
-		}
-	} else {
-		log.Println("Loaded tournament state from", tournamentDataFile)
-	}
-}
-
-func init() {
-	initTournament()
-}
-
 // ---- Persistence ----
 
 func saveTournamentState() {
-	data, err := json.MarshalIndent(tournamentState, "", "  ")
-	if err != nil {
-		log.Printf("Failed to marshal tournament state: %v", err)
-		return
-	}
-	if err := os.WriteFile(tournamentDataFile, data, 0644); err != nil {
+	if err := dataStore.SaveTournament(tournamentState); err != nil {
 		log.Printf("Failed to save tournament state: %v", err)
 	}
 }
 
 func loadTournamentState() error {
-	data, err := os.ReadFile(tournamentDataFile)
+	var state TournamentState
+	ok, err := dataStore.LoadTournament(&state, legacyTournamentFile)
 	if err != nil {
 		return err
 	}
-	var state TournamentState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return err
+	if !ok {
+		log.Println("No saved tournament state found, starting fresh")
 	}
 	if state.Brackets == nil {
 		state.Brackets = make(map[string]*Bracket)
@@ -64,7 +40,12 @@ func loadTournamentState() error {
 	if state.Categories == nil {
 		state.Categories = []WeightCategory{}
 	}
+	for i := range state.Categories {
+		state.Categories[i].Format = state.Categories[i].Format.normalized()
+	}
+	tournamentMutex.Lock()
 	tournamentState = state
+	tournamentMutex.Unlock()
 	return nil
 }
 
@@ -86,7 +67,7 @@ func BroadcastTournamentState(hub *Hub) {
 
 // ---- Category CRUD ----
 
-func addCategory(name, gender, sex, discipline string) string {
+func addCategory(name, gender, sex, discipline string, format FightFormat) string {
 	id := fmt.Sprintf("cat-%d", time.Now().UnixNano())
 	tournamentState.Categories = append(tournamentState.Categories, WeightCategory{
 		ID:         id,
@@ -94,6 +75,7 @@ func addCategory(name, gender, sex, discipline string) string {
 		Gender:     gender,
 		Sex:        sex,
 		Discipline: discipline,
+		Format:     format.normalized(),
 		Fighters:   []TournamentFighter{},
 	})
 	return id
@@ -108,11 +90,12 @@ func findCategoryIndex(categoryID string) int {
 	return -1
 }
 
-func editCategory(categoryID, name, gender, sex, discipline string) bool {
+func editCategory(categoryID, name, gender, sex, discipline string, format FightFormat) bool {
 	idx := findCategoryIndex(categoryID)
 	if idx < 0 {
 		return false
 	}
+	tournamentState.Categories[idx].Format = format.normalized()
 	tournamentState.Categories[idx].Name = name
 	tournamentState.Categories[idx].Gender = gender
 	tournamentState.Categories[idx].Sex = sex
@@ -661,12 +644,16 @@ func StartBracketMatch(hub *Hub, categoryID, bracketMatchID string) bool {
 	tournamentState.ActiveMatchBracketMatchID = bracketMatchID
 
 	cat := tournamentState.Categories[catIdx]
-	old := startFight(match.FightConfig{
-		RedName:  m.FighterRedName,
-		BlueName: m.FighterBlueName,
-		Category: cat.Name + " " + cat.Sex + " " + cat.Gender + " " + cat.Discipline,
-		Bracket:  &ref,
-	})
+	cfg := cat.Format.fightConfig()
+	cfg.RedName, cfg.BlueName = m.FighterRedName, m.FighterBlueName
+	cfg.Category = cat.Name + " " + cat.Sex + " " + cat.Gender + " " + cat.Discipline
+	cfg.Bracket = &ref
+	old, err := theRing.NewFight(newID("f-"), cfg)
+	if err != nil {
+		log.Printf("start bracket match: %v", err)
+		bracket.Matches[idx].Status = m.Status
+		return false
+	}
 	// The replaced fight's bracket match goes back to the queue unless it was decided.
 	if old.Config.Bracket != nil && *old.Config.Bracket != ref && !old.Result().Final {
 		releaseBracketMatchLocked(*old.Config.Bracket)
@@ -832,9 +819,10 @@ func ProcessTournamentAction(hub *Hub, msg ClientMessage) {
 			Gender     string `json:"gender"`
 			Sex        string `json:"sex"`
 			Discipline string `json:"discipline"`
+			FightFormat
 		}
 		if err := json.Unmarshal(payloadBytes, &p); err == nil && p.Name != "" {
-			addCategory(p.Name, p.Gender, p.Sex, p.Discipline)
+			addCategory(p.Name, p.Gender, p.Sex, p.Discipline, p.FightFormat)
 			changed = true
 		}
 
@@ -845,9 +833,10 @@ func ProcessTournamentAction(hub *Hub, msg ClientMessage) {
 			Gender     string `json:"gender"`
 			Sex        string `json:"sex"`
 			Discipline string `json:"discipline"`
+			FightFormat
 		}
 		if err := json.Unmarshal(payloadBytes, &p); err == nil {
-			if editCategory(p.CategoryID, p.Name, p.Gender, p.Sex, p.Discipline) {
+			if editCategory(p.CategoryID, p.Name, p.Gender, p.Sex, p.Discipline, p.FightFormat) {
 				changed = true
 			}
 		}

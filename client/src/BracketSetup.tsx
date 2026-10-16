@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { type TournamentState, type TournamentFighter, sendAction } from './socket';
+import { type TournamentState, type TournamentFighter, type WeightCategory, type FightFormat, defaultFormat, sendAction } from './socket';
 import { Plus, Trash2, Edit3, Trophy, Medal, Users, ChevronRight, Swords, X, Check, LayoutGrid, CalendarDays } from 'lucide-react';
 
 interface Props {
@@ -16,6 +16,7 @@ export default function BracketSetup({ tournament }: Props) {
   const [catGender, setCatGender] = useState('Seniors');
   const [catSex, setCatSex] = useState('male');
   const [catDiscipline, setCatDiscipline] = useState('k-1');
+  const [catFormat, setCatFormat] = useState<FightFormat>(defaultFormat);
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
 
   // Fighter form state
@@ -43,40 +44,41 @@ export default function BracketSetup({ tournament }: Props) {
 
   const bracketSize = selectedCategory?.fighters ? nextPowerOf2(selectedCategory.fighters.length) : 0;
 
-  useEffect(() => {
-    if (showGenerateModal) {
-      setSeedMode('random');
-      if (bracketSize > 0) {
-        setManualSeedSlots(Array(bracketSize).fill(null));
-      }
-    }
-  }, [showGenerateModal, bracketSize]);
-
   const handleAddCategory = () => {
     if (!catName.trim()) return;
     if (editingCatId) {
-      sendAction('EDIT_CATEGORY', { category_id: editingCatId, name: catName.trim(), gender: catGender, sex: catSex, discipline: catDiscipline });
+      sendAction('EDIT_CATEGORY', { category_id: editingCatId, name: catName.trim(), gender: catGender, sex: catSex, discipline: catDiscipline, ...catFormat });
       setEditingCatId(null);
     } else {
-      sendAction('ADD_CATEGORY', { name: catName.trim(), gender: catGender, sex: catSex, discipline: catDiscipline });
+      sendAction('ADD_CATEGORY', { name: catName.trim(), gender: catGender, sex: catSex, discipline: catDiscipline, ...catFormat });
     }
+    resetCategoryForm();
+  };
+
+  const resetCategoryForm = () => {
+    setEditingCatId(null);
     setCatName('');
     setCatGender('Seniors');
     setCatSex('male');
     setCatDiscipline('k-1');
+    setCatFormat(defaultFormat);
   };
+
+  const setFormatField = (field: keyof FightFormat, value: number) =>
+    setCatFormat(f => ({ ...f, [field]: value }));
 
   const handleDeleteCategory = (id: string) => {
     sendAction('DELETE_CATEGORY', { category_id: id });
     if (selectedCatId === id) setSelectedCatId(null);
   };
 
-  const handleEditCategory = (cat: { id: string; name: string; gender: string; sex: string; discipline: string }) => {
+  const handleEditCategory = (cat: WeightCategory) => {
     setEditingCatId(cat.id);
     setCatName(cat.name);
     setCatGender(cat.gender);
     setCatSex(cat.sex || 'male');
     setCatDiscipline(cat.discipline || 'k-1');
+    setCatFormat(cat.format ?? defaultFormat);
   };
 
   const handleAddFighter = () => {
@@ -126,18 +128,17 @@ export default function BracketSetup({ tournament }: Props) {
     if (bracket?.generated) {
       if (!window.confirm('Are you sure you want to regenerate this bracket? All current matches and results will be lost.')) return;
     }
+    setSeedMode('random');
+    if (bracketSize > 0) setManualSeedSlots(Array(bracketSize).fill(null));
     setShowGenerateModal(true);
   };
 
   const handleConfirmGenerate = () => {
     if (!selectedCatId) return;
-    const payload: any = { category_id: selectedCatId };
-    
-    // Only send if manual seeding is valid
+    const payload: { category_id: string; manual_seeding?: string[] } = { category_id: selectedCatId };
     if (seedMode === 'manual') {
       payload.manual_seeding = manualSeedSlots.map(s => s || "");
     }
-    
     sendAction('GENERATE_BRACKET', payload);
     setShowGenerateModal(false);
   };
@@ -206,6 +207,35 @@ export default function BracketSetup({ tournament }: Props) {
               <option value="k-1">K-1</option>
             </select>
           </div>
+          {/* Fight format (§2) and knockdown limits (§5) */}
+          <div className="grid grid-cols-3 gap-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+            <label className="flex flex-col gap-1">Rounds
+              <select value={catFormat.rounds} onChange={e => setFormatField('rounds', Number(e.target.value))}
+                className="px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm normal-case">
+                {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">Round
+              <select value={catFormat.round_seconds} onChange={e => setFormatField('round_seconds', Number(e.target.value))}
+                className="px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm normal-case">
+                {[60, 90, 120, 150, 180].map(n => <option key={n} value={n}>{Math.floor(n / 60)}:{String(n % 60).padStart(2, '0')}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">Rest
+              <select value={catFormat.rest_seconds} onChange={e => setFormatField('rest_seconds', Number(e.target.value))}
+                className="px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm normal-case">
+                {[30, 45, 60, 90, 120].map(n => <option key={n} value={n}>{Math.floor(n / 60)}:{String(n % 60).padStart(2, '0')}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 col-span-3 sm:col-span-1">KD / round
+              <input type="number" min={1} max={9} value={catFormat.kd_limit_round} onChange={e => setFormatField('kd_limit_round', Number(e.target.value))}
+                className="px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm" />
+            </label>
+            <label className="flex flex-col gap-1 col-span-3 sm:col-span-1">KD / fight
+              <input type="number" min={1} max={9} value={catFormat.kd_limit_fight} onChange={e => setFormatField('kd_limit_fight', Number(e.target.value))}
+                className="px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm" />
+            </label>
+          </div>
           <div className="flex gap-2">
             <button
               onClick={handleAddCategory}
@@ -216,7 +246,7 @@ export default function BracketSetup({ tournament }: Props) {
             </button>
             {editingCatId && (
               <button
-                onClick={() => { setEditingCatId(null); setCatName(''); setCatGender('Seniors'); setCatSex('male'); setCatDiscipline('k-1'); }}
+                onClick={resetCategoryForm}
                 className="p-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-all cursor-pointer"
               >
                 <X size={14} />
@@ -245,6 +275,9 @@ export default function BracketSetup({ tournament }: Props) {
               <div className="flex-1 min-w-0">
                 <div className="text-white font-bold text-sm truncate">{cat.name}</div>
                 <div className="text-zinc-500 text-xs">{[cat.sex, cat.gender, cat.discipline].filter(Boolean).join(' · ')} · {cat.fighters?.length || 0} fighters</div>
+                {cat.format && (
+                  <div className="text-zinc-600 text-[10px]">{cat.format.rounds}×{Math.floor(cat.format.round_seconds / 60)}:{String(cat.format.round_seconds % 60).padStart(2, '0')} · KD {cat.format.kd_limit_round}/{cat.format.kd_limit_fight}</div>
+                )}
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); handleEditCategory(cat); }}

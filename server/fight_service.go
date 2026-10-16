@@ -13,20 +13,11 @@ import (
 	"judging-server/internal/match"
 )
 
-// The current fight. All changes go through applyFightEvent.
-var (
-	fightMu sync.Mutex
-	fight   match.Fight
-	// standaloneFormat is the format of fights started with NEW_FIGHT.
-	standaloneFormat = match.FightConfig{}.WithDefaults()
-)
+// standaloneFormat is the format of fights started with NEW_FIGHT (not from a bracket).
+var standaloneFormat = match.FightConfig{}.WithDefaults()
 
 // showLiveScores lets the viewer show judges' scores during the fight (§7).
 const showLiveScores = true
-
-func init() {
-	startFight(match.FightConfig{RoundSeconds: standaloneFormat.RoundSeconds, RestSeconds: standaloneFormat.RestSeconds})
-}
 
 func nowMs() int64 { return time.Now().UnixMilli() }
 
@@ -36,36 +27,17 @@ func newID(prefix string) string {
 	return prefix + hex.EncodeToString(b)
 }
 
-// startFight replaces the current fight with a new one and returns the old one.
-func startFight(cfg match.FightConfig) match.Fight {
-	cfg.FightID = newID("f-")
-	f, err := match.Apply(match.Fight{}, match.Event{
-		ID: newID("e-"), Type: match.FightCreated, Actor: match.Actor{Kind: match.Operator}, At: nowMs(), Config: &cfg,
-	})
-	if err != nil {
-		log.Printf("create fight: %v", err)
-		return fight
-	}
-	fightMu.Lock()
-	old := fight
-	fight = f
-	fightMu.Unlock()
-	return old
+type stateUpdate struct {
+	match.FightView
+	LiveScores bool `json:"live_scores"`
 }
 
 // stateMessage is the STATE_UPDATE frame for the current fight.
 func stateMessage() []byte {
-	fightMu.Lock()
-	defer fightMu.Unlock()
-	return fightStateLocked()
-}
-
-func fightStateLocked() []byte {
-	now := nowMs()
 	b, err := json.Marshal(ServerMessage{
 		Type:       "STATE_UPDATE",
-		Payload:    stateUpdate{FightView: fight.View(now), LiveScores: showLiveScores},
-		ServerTime: now,
+		Payload:    stateUpdate{FightView: theRing.View(), LiveScores: showLiveScores},
+		ServerTime: nowMs(),
 	})
 	if err != nil {
 		log.Printf("marshal state: %v", err)
@@ -73,38 +45,14 @@ func fightStateLocked() []byte {
 	return b
 }
 
-type stateUpdate struct {
-	match.FightView
-	LiveScores bool `json:"live_scores"`
-}
+// broadcastMu keeps state frames in the order they were computed, so a slow
+// sender can never overwrite a newer view with an older one.
+var broadcastMu sync.Mutex
 
 func BroadcastState(hub *Hub) {
+	broadcastMu.Lock()
+	defer broadcastMu.Unlock()
 	hub.broadcast <- stateMessage()
-}
-
-// applyFightEvent applies one event and broadcasts the result. When the
-// result of a bracket fight becomes final, the bracket advances.
-func applyFightEvent(hub *Hub, e match.Event) error {
-	fightMu.Lock()
-	wasFinal := fight.Result().Final
-	next, err := match.Apply(fight, e)
-	if err != nil {
-		fightMu.Unlock()
-		return err
-	}
-	fight = next
-	res := fight.Result()
-	ref := fight.Config.Bracket
-	msg := fightStateLocked()
-	fightMu.Unlock()
-
-	hub.broadcast <- msg
-	if ref != nil && res.Final && !wasFinal {
-		if err := CompleteBracketMatch(hub, *ref, res); err != nil {
-			log.Printf("bracket: %v", err)
-		}
-	}
-	return nil
 }
 
 // Payloads of fight actions.
@@ -113,9 +61,10 @@ type fightPayload struct {
 	Corner   match.Corner    `json:"corner"`
 	Method   match.Method    `json:"method"`
 	TargetID string          `json:"target_id"`
-	// UPDATE_MATCH_SETTINGS
-	RoundDuration int `json:"round_duration"`
-	RestDuration  int `json:"rest_duration"`
+	// NEW_FIGHT
+	Rounds       int `json:"rounds"`
+	RoundSeconds int `json:"round_seconds"`
+	RestSeconds  int `json:"rest_seconds"`
 }
 
 // seat accepts 1 or "1".
@@ -147,7 +96,7 @@ var fightEventTypes = map[string]match.EventType{
 	"CONFIRM_RESULT":      match.ResultConfirmed,
 }
 
-// actionToEvent turns a client action into a fight event stamped with server time.
+// actionToEvent turns a client action into a fight event; the ring stamps the time.
 func actionToEvent(msg ClientMessage) (match.Event, error) {
 	typ, ok := fightEventTypes[msg.Type]
 	if !ok {
@@ -163,7 +112,6 @@ func actionToEvent(msg ClientMessage) (match.Event, error) {
 		ID:       newID("e-"),
 		Type:     typ,
 		Actor:    match.Actor{Kind: match.Operator},
-		At:       nowMs(),
 		Corner:   p.Corner,
 		Method:   p.Method,
 		TargetID: p.TargetID,
@@ -176,26 +124,20 @@ func actionToEvent(msg ClientMessage) (match.Event, error) {
 }
 
 func processFightAction(hub *Hub, msg ClientMessage) {
-	switch msg.Type {
-	case "NEW_FIGHT":
-		old := startFight(match.FightConfig{RoundSeconds: standaloneFormat.RoundSeconds, RestSeconds: standaloneFormat.RestSeconds})
-		releaseBracketMatch(hub, old)
-		BroadcastState(hub)
-		return
-	case "UPDATE_MATCH_SETTINGS":
+	if msg.Type == "NEW_FIGHT" {
 		var p fightPayload
-		if err := json.Unmarshal(msg.Payload, &p); err != nil || p.RoundDuration <= 0 || p.RestDuration <= 0 {
-			log.Printf("UPDATE_MATCH_SETTINGS: bad payload")
+		if len(msg.Payload) > 0 {
+			json.Unmarshal(msg.Payload, &p)
+		}
+		if p.RoundSeconds > 0 {
+			standaloneFormat = match.FightConfig{Rounds: p.Rounds, RoundSeconds: p.RoundSeconds, RestSeconds: p.RestSeconds}.WithDefaults()
+		}
+		old, err := theRing.NewFight(newID("f-"), standaloneFormat)
+		if err != nil {
+			log.Printf("NEW_FIGHT: %v", err)
 			return
 		}
-		standaloneFormat.RoundSeconds, standaloneFormat.RestSeconds = p.RoundDuration, p.RestDuration
-		fightMu.Lock()
-		fresh := fight.Phase() == match.NotStarted && fight.Config.Bracket == nil
-		fightMu.Unlock()
-		if fresh {
-			startFight(match.FightConfig{RoundSeconds: p.RoundDuration, RestSeconds: p.RestDuration})
-		}
-		BroadcastState(hub)
+		releaseBracketMatch(hub, old)
 		return
 	}
 
@@ -204,7 +146,7 @@ func processFightAction(hub *Hub, msg ClientMessage) {
 		log.Printf("action rejected: %v", err)
 		return
 	}
-	if err := applyFightEvent(hub, e); err != nil {
+	if err := theRing.Apply(e); err != nil {
 		log.Printf("%s rejected: %v", msg.Type, err)
 	}
 }

@@ -10,7 +10,7 @@ interface Props {
 
 export default function ViewerScreen({ view }: Props) {
   const { clock, corners, result } = view;
-  const { remainingMs, isRest } = useCountdown(clock);
+  const { remainingMs, isRest, secondsOut } = useCountdown(clock);
 
   const statusColor =
     isRest ? 'text-cyan-400' :
@@ -73,7 +73,7 @@ export default function ViewerScreen({ view }: Props) {
           </div>
           <div className={`mt-2 text-sm font-bold uppercase tracking-widest ${statusColor} ${statusPulse}`}>
             {clock.phase === 'RUNNING' && '● '}
-            {isRest ? 'REST PHASE' : clock.phase.replace('_', ' ')}
+            {secondsOut ? 'SECONDS OUT' : isRest ? 'REST PHASE' : clock.phase.replace('_', ' ')}
           </div>
         </div>
 

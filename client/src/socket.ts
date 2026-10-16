@@ -1,4 +1,5 @@
 import type { FightView } from './api/protocol';
+import { addTimeSample, noteServerTime, resetTimeSamples } from './api/serverClock';
 
 // ---- Tournament Types ----
 
@@ -17,8 +18,22 @@ export interface WeightCategory {
   gender: string;
   sex: string;
   discipline: string;
+  format: FightFormat;
   fighters: TournamentFighter[];
 }
+
+/** A category's fight format (§2) and knockdown limits (§5). */
+export interface FightFormat {
+  rounds: number;
+  round_seconds: number;
+  rest_seconds: number;
+  kd_limit_round: number;
+  kd_limit_fight: number;
+}
+
+export const defaultFormat: FightFormat = {
+  rounds: 3, round_seconds: 120, rest_seconds: 60, kd_limit_round: 3, kd_limit_fight: 4,
+};
 
 export type BracketMatchStatus = 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'BYE';
 
@@ -69,6 +84,7 @@ export function connectWebSocket() {
 
   socket.onopen = () => {
     console.log('Connected to server');
+    startTimeSync();
   };
 
   socket.onmessage = (event) => {
@@ -78,7 +94,10 @@ export function connectWebSocket() {
       for (const msgString of messages) {
         if (!msgString) continue;
         const msg = JSON.parse(msgString);
-        if (msg.type === "STATE_UPDATE") {
+        if (msg.server_time) noteServerTime(msg.server_time);
+        if (msg.type === "TIME_SYNC") {
+          addTimeSample(msg.payload.client_sent, msg.server_time);
+        } else if (msg.type === "STATE_UPDATE") {
           const state = msg.payload as FightView;
           listeners.forEach(cb => cb(state));
         } else if (msg.type === "TOURNAMENT_STATE_UPDATE") {
@@ -93,9 +112,31 @@ export function connectWebSocket() {
 
   socket.onclose = () => {
     console.log('Disconnected. Reconnecting in 2s...');
+    stopTimeSync();
     socket = null;
     setTimeout(connectWebSocket, 2000);
   };
+}
+
+// Clock sync: a burst of pings on connect, then one every 30 s.
+let syncTimers: number[] = [];
+
+function ping() {
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: 'TIME_SYNC', payload: { client_sent: Date.now() } }));
+  }
+}
+
+function startTimeSync() {
+  stopTimeSync();
+  resetTimeSamples();
+  for (let i = 0; i < 5; i++) syncTimers.push(window.setTimeout(ping, i * 300));
+  syncTimers.push(window.setInterval(ping, 30_000));
+}
+
+function stopTimeSync() {
+  syncTimers.forEach(t => { clearTimeout(t); clearInterval(t); });
+  syncTimers = [];
 }
 
 export function subscribeToState(callback: StateCallback) {

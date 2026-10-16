@@ -55,7 +55,10 @@ func (c *Client) readPump() {
 			continue
 		}
 
-		// Process message locally before broadcasting if needed
+		if msg.Type == "TIME_SYNC" {
+			c.replyTimeSync(msg.Payload)
+			continue
+		}
 		ProcessAction(c.hub, msg)
 	}
 }
@@ -115,4 +118,14 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 
 	go client.writePump()
 	go client.readPump()
+}
+
+// replyTimeSync answers a clock-sync ping with the server time, so the client
+// can estimate its clock offset from the round trip.
+func (c *Client) replyTimeSync(payload json.RawMessage) {
+	b, err := json.Marshal(ServerMessage{Type: "TIME_SYNC", Payload: payload, ServerTime: nowMs()})
+	if err != nil {
+		return
+	}
+	c.hub.direct <- directMessage{client: c, data: b}
 }
