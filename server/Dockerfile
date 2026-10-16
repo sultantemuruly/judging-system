@@ -14,7 +14,7 @@ COPY . .
 
 # Build a statically linked binary (no CGO, no external deps)
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -ldflags="-w -s" -o judging-server .
+    go build -ldflags="-w -s" -o judging-server ./cmd/server
 
 # ============================================================
 # Stage 2: Run

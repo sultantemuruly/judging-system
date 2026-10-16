@@ -5,12 +5,15 @@ import { connect, sessionForPath, subscribeToState, subscribeToTournament } from
 import OperatorScreen from './features/operator/OperatorScreen'
 import JudgeScreen from './features/judge/JudgeScreen'
 import ViewerScreen from './features/viewer/ViewerScreen'
-import BracketSetup from './BracketSetup'
-import BracketView from './BracketView'
-import AllBracketsView from './AllBracketsView'
-import MatchSchedule from './MatchSchedule'
+import BracketSetup from './features/tournament/BracketSetup'
+import BracketView from './features/tournament/BracketView'
+import AllBracketsView from './features/tournament/AllBracketsView'
+import MatchSchedule from './features/tournament/MatchSchedule'
+import BracketPrint from './features/tournament/BracketPrint'
 
 const defaultTournament: TournamentState = {
+  name: '',
+  date: '',
   categories: [],
   brackets: {},
   active_match_category_id: '',
@@ -46,6 +49,7 @@ function App() {
         <Route path="/tournament/bracket/:categoryId" element={<BracketView tournament={tournament} />} />
         <Route path="/tournament/brackets/all" element={<AllBracketsView tournament={tournament} />} />
         <Route path="/tournament/schedule" element={<MatchSchedule tournament={tournament} />} />
+        <Route path="/tournament/print/:categoryId" element={<BracketPrint tournament={tournament} />} />
       </Routes>
     </BrowserRouter>
   )

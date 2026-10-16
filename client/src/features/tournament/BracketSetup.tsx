@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { type TournamentState, type TournamentFighter, type WeightCategory, type FightFormat, defaultFormat } from './api/protocol';
-import { sendAction } from './api/socket';
+import { type TournamentState, type TournamentFighter, type WeightCategory, type FightFormat, defaultFormat } from '../../api/protocol';
+import { sendAction } from '../../api/socket';
 import { Plus, Trash2, Edit3, Trophy, Medal, Users, ChevronRight, Swords, X, Check, LayoutGrid, CalendarDays } from 'lucide-react';
 
 interface Props {
@@ -35,6 +35,8 @@ export default function BracketSetup({ tournament }: Props) {
 
   const selectedCategory = tournament.categories.find(c => c.id === selectedCatId);
   const bracket = selectedCatId ? tournament.brackets?.[selectedCatId] : null;
+  // After the first decided fight the bracket is fixed (§8).
+  const locked = !!bracket?.locked;
 
   const nextPowerOf2 = (n: number) => {
     if (n <= 1) return 1;
@@ -153,6 +155,7 @@ export default function BracketSetup({ tournament }: Props) {
           <h1 className="text-xl font-black text-white tracking-widest uppercase mb-1">
             Tournament
           </h1>
+          <TournamentInfo key={`${tournament.name}|${tournament.date}`} name={tournament.name} date={tournament.date} />
           <p className="text-xs text-zinc-500 font-medium mb-3">Weight Categories</p>
           <div className="flex flex-col gap-2">
             <button
@@ -326,6 +329,11 @@ export default function BracketSetup({ tournament }: Props) {
                     View Bracket
                   </button>
                 )}
+                {locked ? (
+                  <span className="px-4 py-2.5 text-sm font-bold text-zinc-500" title="A fight was decided: no regeneration, no adding or removing fighters">
+                    Bracket locked
+                  </span>
+                ) : (
                 <button
                   onClick={handleGenerateBracket}
                   disabled={!selectedCategory.fighters || selectedCategory.fighters.length < 2}
@@ -334,6 +342,7 @@ export default function BracketSetup({ tournament }: Props) {
                   <Swords size={16} />
                   {bracket?.generated ? 'Regenerate Bracket' : 'Generate Bracket'}
                 </button>
+                )}
               </div>
             </div>
 
@@ -402,7 +411,8 @@ export default function BracketSetup({ tournament }: Props) {
                 </div>
                 <button
                   onClick={handleAddFighter}
-                  disabled={!fighterName.trim()}
+                  disabled={!fighterName.trim() || (locked && !editingFighterId)}
+                  title={locked && !editingFighterId ? 'Bracket locked: fighters can no longer be added' : undefined}
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-30 text-white text-sm font-bold rounded-lg transition-all flex items-center gap-1 cursor-pointer"
                 >
                   {editingFighterId ? <Check size={14} /> : <Plus size={14} />}
@@ -456,12 +466,14 @@ export default function BracketSetup({ tournament }: Props) {
                       >
                         <Edit3 size={14} />
                       </button>
-                      <button
-                        onClick={() => handleDeleteFighter(f.id)}
-                        className="p-1.5 text-zinc-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {!locked && (
+                        <button
+                          onClick={() => handleDeleteFighter(f.id)}
+                          className="p-1.5 text-zinc-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -583,6 +595,27 @@ export default function BracketSetup({ tournament }: Props) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Tournament name and date, printed on every bracket PDF (§8). */
+function TournamentInfo({ name, date }: { name: string; date: string }) {
+  const [n, setN] = useState(name);
+  const [d, setD] = useState(date);
+  const dirty = n !== name || d !== date;
+  return (
+    <div className="flex flex-col gap-1.5 mb-3">
+      <input value={n} onChange={e => setN(e.target.value)} placeholder="Tournament name"
+        className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm placeholder-zinc-500" />
+      <div className="flex gap-2">
+        <input type="date" value={d} onChange={e => setD(e.target.value)}
+          className="flex-1 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm" />
+        <button disabled={!dirty} onClick={() => sendAction('SET_TOURNAMENT_INFO', { name: n, date: d })}
+          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-30 text-white text-xs font-bold rounded-lg cursor-pointer">
+          Save
+        </button>
+      </div>
     </div>
   );
 }

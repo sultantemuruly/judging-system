@@ -1,7 +1,8 @@
-package main
+package app
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -14,19 +15,13 @@ import (
 	"judging-server/internal/ws"
 )
 
-// wsServer runs the whole server on a fake clock behind a real WebSocket endpoint.
-func wsServer(t *testing.T) (url string, clk *clock.Fake) {
+// wsServer runs the whole app on a fake clock behind a real WebSocket endpoint.
+func wsServer(t *testing.T) (url string, a *App, clk *clock.Fake) {
 	t.Helper()
-	t.Chdir(t.TempDir())
-	clk = clock.NewFake(time.UnixMilli(1_700_000_000_000))
-	hub, err := setup("data", clk)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(theRing.Close)
-	srv := httptest.NewServer(httpHandler(hub))
+	a, clk, _ = newTestApp(t)
+	srv := httptest.NewServer(http.HandlerFunc(a.Hub().ServeWS))
 	t.Cleanup(srv.Close)
-	return "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws", clk
+	return "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws", a, clk
 }
 
 type wsConn struct {
@@ -138,7 +133,7 @@ func judges(t *testing.T, url string) [4]*wsConn {
 }
 
 func TestStartNeedsAllThreeJudges(t *testing.T) {
-	url, _ := wsServer(t)
+	url, _, _ := wsServer(t)
 	op := dial(t, url, "role=operator")
 	op.send("start-1", "START_ROUND", nil)
 	if r := op.result("start-1"); r != "judges_not_connected" {
@@ -155,7 +150,7 @@ func TestStartNeedsAllThreeJudges(t *testing.T) {
 }
 
 func TestRolesAreEnforced(t *testing.T) {
-	url, _ := wsServer(t)
+	url, a, _ := wsServer(t)
 	j := judges(t, url)
 	op := dial(t, url, "role=operator")
 	viewer := dial(t, url, "role=viewer")
@@ -177,13 +172,13 @@ func TestRolesAreEnforced(t *testing.T) {
 	// A judge's seat comes from the connection, not from the payload.
 	j[2].send("h2", "REGISTER_HIT", map[string]any{"seat": 1, "corner": "Blue"})
 	j[2].result("h2")
-	if v := theRing.View(); v.Judges[1].Hits != 1 || v.Judges[0].Hits != 0 {
+	if v := a.ring.View(); v.Judges[1].Hits != 1 || v.Judges[0].Hits != 0 {
 		t.Fatalf("hits = %d/%d, want the tap on seat 2", v.Judges[0].Hits, v.Judges[1].Hits)
 	}
 }
 
 func TestSpec_S15_SecondPhoneTakesOverSeat(t *testing.T) {
-	url, _ := wsServer(t)
+	url, a, _ := wsServer(t)
 	j := judges(t, url)
 	op := dial(t, url, "role=operator")
 	op.send("s", "START_ROUND", nil)
@@ -206,13 +201,13 @@ func TestSpec_S15_SecondPhoneTakesOverSeat(t *testing.T) {
 	if err := first.conn.WriteJSON(ws.Action{ID: "t2", Type: "REGISTER_HIT", Payload: json.RawMessage(`{"corner":"Red"}`)}); err == nil {
 		time.Sleep(100 * time.Millisecond)
 	}
-	if v := theRing.View(); v.Judges[0].Hits != 1 || !v.Judges[0].Connected {
+	if v := a.ring.View(); v.Judges[0].Hits != 1 || !v.Judges[0].Connected {
 		t.Fatalf("seat 1 = %+v, want 1 hit and still connected", v.Judges[0])
 	}
 }
 
 func TestSpec_S16_GongGraceOverWebSocket(t *testing.T) {
-	url, clk := wsServer(t)
+	url, _, clk := wsServer(t)
 	j := judges(t, url)
 	op := dial(t, url, "role=operator")
 	op.send("s", "START_ROUND", nil)
@@ -233,13 +228,13 @@ func TestSpec_S16_GongGraceOverWebSocket(t *testing.T) {
 }
 
 func TestSpec_S11_OfflineTapsCountedOnceAfterReconnect(t *testing.T) {
-	url, clk := wsServer(t)
+	url, a, clk := wsServer(t)
 	j := judges(t, url)
 	op := dial(t, url, "role=operator")
 	op.send("s", "START_ROUND", nil)
 	op.result("s")
 	start := clock.Ms(clk.Now())
-	fightID := theRing.Fight().Config.FightID
+	fightID := a.ring.Fight().Config.FightID
 
 	// Judge 1's Wi-Fi drops for 20 s; the phone queues 4 taps with their device time.
 	j[1].conn.Close()
@@ -250,7 +245,7 @@ func TestSpec_S11_OfflineTapsCountedOnceAfterReconnect(t *testing.T) {
 		taps = append(taps, ws.Action{ID: "offline-" + string(rune('a'+i)), Type: "REGISTER_HIT", Payload: p, ClientTime: clock.Ms(clk.Now()), Offline: true})
 	}
 	clk.Advance(200 * time.Second) // the round has ended by itself meanwhile
-	if p := theRing.View().Clock.Phase; p != match.Rest {
+	if p := a.ring.View().Clock.Phase; p != match.Rest {
 		t.Fatalf("phase = %s, want REST", p)
 	}
 
@@ -263,7 +258,7 @@ func TestSpec_S11_OfflineTapsCountedOnceAfterReconnect(t *testing.T) {
 			}
 		}
 	}
-	v := theRing.View()
+	v := a.ring.View()
 	if v.Judges[0].Hits != 4 || v.Judges[0].Rounds[0].Blue != 4 {
 		t.Fatalf("judge 1 = %+v, want exactly 4 blue hits in round 1", v.Judges[0])
 	}
@@ -277,7 +272,7 @@ func TestSpec_S11_OfflineTapsCountedOnceAfterReconnect(t *testing.T) {
 }
 
 func TestResentTournamentActionAppliedOnce(t *testing.T) {
-	url, _ := wsServer(t)
+	url, a, _ := wsServer(t)
 	op := dial(t, url, "role=operator")
 	for range 2 {
 		op.send("add-cat", "ADD_CATEGORY", map[string]string{"name": "-71kg"})
@@ -285,23 +280,21 @@ func TestResentTournamentActionAppliedOnce(t *testing.T) {
 			t.Fatalf("NACK %q", r)
 		}
 	}
-	tournamentMutex.RLock()
-	n := len(tournamentState.Categories)
-	tournamentMutex.RUnlock()
+	n := len(a.state().Categories)
 	if n != 1 {
 		t.Fatalf("categories = %d, want 1", n)
 	}
 }
 
 func TestLargeActionIsAccepted(t *testing.T) {
-	url, _ := wsServer(t)
+	url, _, _ := wsServer(t)
 	op := dial(t, url, "role=operator")
 	seeding := make([]string, 32)
 	for i := range seeding {
 		seeding[i] = strings.Repeat("x", 40) // ~1.5 KB, well over the old 512-byte limit
 	}
 	op.send("big", "GENERATE_BRACKET", map[string]any{"category_id": "none", "manual_seeding": seeding})
-	if r := op.result("big"); r != "rejected" {
-		t.Fatalf("got %q, want an answer (rejected: unknown category), not a dropped socket", r)
+	if r := op.result("big"); r != "not_found" {
+		t.Fatalf("got %q, want an answer (not_found: unknown category), not a dropped socket", r)
 	}
 }

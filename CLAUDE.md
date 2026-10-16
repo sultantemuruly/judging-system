@@ -13,13 +13,13 @@ Real-time judging system for amateur kickboxing tournaments (K-1 / Low-kick, WAK
 Server (Go, module `judging-server`, Go 1.25):
 ```bash
 cd server
-go run .                          # http://localhost:8080, /ws and /health
+go run ./cmd/server               # http://localhost:8080, /ws and /health; PORT, DATA_DIR env vars
 go build ./... && go vet ./...
 go test ./...                     # all tests
-go test ./... -run TestName -v    # single test
+go test ./... -run TestSpec -v    # the spec §10 scenarios
 go test -race ./...               # concurrency changes must pass this
 ```
-The server writes `tournament_data.json` into its working directory (gitignored) — run experiments from a scratch directory, not the repo.
+The server keeps its data in `DATA_DIR` (default `./data`, gitignored): one JSONL event log per fight, `current_fight`, `heartbeat`, `tournament.json`. On first start it imports an old `tournament_data.json` from the working directory. Run experiments with a scratch `DATA_DIR`, not the repo's.
 
 Client (React 19 + TypeScript + Vite 7 + Tailwind 4):
 ```bash
@@ -28,62 +28,50 @@ npm install
 npm run dev      # http://localhost:5173 (listens on all interfaces so phones on the LAN can connect)
 npm run build    # tsc -b && vite build → client/dist
 npm run lint
+npm test         # vitest
 ```
-There is no client test runner yet. In dev the client connects to `ws://<host>:8080/ws` directly; on HTTPS it uses `wss://<host>/ws` through nginx (`client/nginx.conf`).
+In dev the client connects to `ws://<host>:8080/ws` directly; on HTTPS it uses `wss://<host>/ws` through nginx (`client/nginx.conf`). The page decides the connection's role: `/judge/N` is judge seat N, `/viewer` a viewer, anything else the operator.
 
-Docker (`docker-compose.yml`) is currently broken: the builder image is `golang:1.21` while `go.mod` needs 1.25, and the client image expects a pre-built `client/dist`. Fix it before relying on it.
+Docker (`docker-compose.yml`) is still broken: the builder image is `golang:1.21` while `go.mod` needs 1.25, the client image expects a pre-built `client/dist`, and compose bind-mounts a single `tournament_data.json` file — mount the data directory instead (atomic writes rename files inside it). Fix it before relying on it.
 
-## Current architecture (as inherited)
-
-- **One WebSocket, full-state broadcast.** Clients send `{type, payload}` actions; the server mutates global state and broadcasts the *entire* state to every client as `STATE_UPDATE` (current fight) or `TOURNAMENT_STATE_UPDATE` (categories + brackets). `writePump` batches queued messages into one frame separated by `\n`; `client/src/socket.ts` splits on newlines.
-- **Two global stores, two mutexes.** `store.go` holds the single current fight (`appState`, `stateMutex`) and routes tournament action types to `tournament_store.go` (`tournamentState`, `tournamentMutex`). Functions unlock mid-way to broadcast and re-lock for the deferred unlock — be careful when touching this pattern.
-- **Fight ↔ bracket link.** `START_BRACKET_MATCH` resets the fight state with the bracket fighters' names; when the fight ends (after round 3, TKO or DQ) `CompleteBracketMatch` runs in a goroutine and advances the winner via `advanceWinner` / `checkAndAutoAdvance` (bye/walkover cascade).
-- **Persistence.** Only the tournament is saved to `tournament_data.json`; the current fight lives in memory.
-- **Client.** `App.tsx` owns both states and passes them to route pages: `/` operator dashboard, `/judge/:id`, `/viewer`, `/tournament/*`. Every page renders from props; actions go through `sendAction`.
-
-Known defects to keep in mind (fix them, don't build on them):
-- `CompleteBracketMatch` treats any non-`Red` winner (including `Draw`) as Blue.
-- `CalculateMatchWinner` returns early when no judge pressed anything, leaving the bracket match ACTIVE forever; judges with zero taps are excluded from the vote.
-- Rounds end only because the Dashboard tab sends `END_ROUND` from a browser timer; timers compare device clocks with server timestamps.
-- `maxMessageSize = 512` in `client.go` closes the socket on larger actions (e.g. manual seeding of more than ~10 fighters).
-- Judge taps sent while disconnected are silently dropped; there is no ack, no judge undo UI, no undo for warnings/knockdowns.
-- Scoring logic is duplicated in `store.go`, `Dashboard.tsx` and `ViewerScreen.tsx`.
-- No auth: any client can send any action; two devices on `/judge/1` double-count.
-- `MatchSchedule.tsx` priorities are hardcoded to one past tournament's categories.
-
-## Target architecture (refactor towards this)
-
-Migrate incrementally — keep the app runnable after every step, and land each step with tests.
+## Architecture
 
 Server — pure domain logic separated from I/O:
 ```
 server/
-  cmd/server/main.go        wiring only: config, store, hub, HTTP routes
-  internal/match/           fight domain: events, state reducer, scoring, tie-breaks, round clock rules — pure, no I/O, no goroutines
-  internal/tournament/      categories, fighters, seeding, bracket advancement, result correction — pure
-  internal/store/           persistence: append-only event log + snapshots on disk; recovery on restart
-  internal/ws/              hub, client pumps, protocol message types, per-action acks and idempotency keys
-  internal/clock/           server-side round/rest timer that emits round-end events
+  cmd/server/main.go        wiring only: config, store, app, HTTP routes, heartbeat ticker
+  internal/match/           fight domain: events, Apply (validate + fold), scoring, tie-breaks, clock rules, FightView — pure
+  internal/tournament/      categories, fighters, seeding, bracket advancement, walkover, result correction, placings — pure
+  internal/ring/            the fight on the ring: validate → append to log → commit → re-arm the 0:00 alarm → notify
+  internal/store/           data directory: per-fight JSONL log, heartbeat, atomic tournament.json; recovery reads
+  internal/ws/              hub, client pumps, sessions (role/seat/device), seat takeover, ACK/NACK, protocol types
+  internal/clock/           real and fake clocks, Alarm
+  internal/app/             decodes actions, checks roles, links fights to the bracket, broadcasts state
 ```
-- **Server is authoritative.** It owns the clock, computes every score and verdict, and sends computed results. Clients never recompute scores.
-- **Fight state = fold over an event log.** Hits, undos, warnings, knockdowns, start/pause/end are events with an ID, author and server timestamp; undo is an event, not a deletion. This gives persistence, undo and audit from one mechanism.
-- Every client action carries a client-generated ID; the server acks it and ignores duplicates (offline queue on judges' phones relies on this).
-- Domain packages take time as a parameter (no `time.Now()` inside), so tests are deterministic.
-- Table-driven tests in `internal/match` mirror the spec's section-10 scenarios one-to-one.
+- **Server is authoritative.** It owns the clock, computes every score and verdict, and broadcasts a computed `FightView` (`STATE_UPDATE`) and the tournament (`TOURNAMENT_STATE_UPDATE`). Clients never recompute scores. State frames carry `seq` (clients drop older ones) and every frame carries `server_time`.
+- **Fight state = fold over an event log.** Hits, undos, warnings, knockdowns, stoppages, decisions, confirmation are events with an ID, actor and server time; undo is an event (`HitUndone`, `RefereeActionUndone`), not a deletion. `match.Apply` returns a new fight or an error and leaves the input unchanged. Every accepted event is fsynced before it is applied and broadcast; a restart replays the log and restores a running round paused.
+- **Actions** are `{id, type, payload, client_time?, offline?}`; the server answers `ACK`/`NACK{reason}`. A client action ID becomes the event ID, so resends are not applied twice (also across restarts). A judge's seat comes from the connection, never the payload. Judges' unconfirmed actions are queued in localStorage and resent marked `offline`; offline taps are judged by their device time converted to server time.
+- **Fight ↔ bracket.** `START_BRACKET_MATCH` puts a match on the ring (refused while another fight is in progress); the bracket advances only when the operator confirms the result. A fight replaced before confirmation returns its match to PENDING. Locks: tournament lock (`App.tmu`) before the ring lock; ring callbacks run outside the ring lock.
+- Domain packages take time as a parameter (no `time.Now()` inside), so tests are deterministic. Tests named `TestSpec_SNN_*` mirror the spec's §10 scenarios one-to-one.
 
 Client — feature folders, thin pages:
 ```
 client/src/
-  api/          socket connection, reconnect, offline action queue, protocol types (mirror Go structs)
+  api/          socket (roles, reconnect, ACKs, clock sync), offline queue, protocol types (mirror Go structs)
   features/
     judge/      judge screen
-    operator/   operator dashboard
+    operator/   operator dashboard, split into small components
     viewer/     spectator screen
-    tournament/ setup, brackets, schedule, PDF export
-  shared/       reusable components (score bars, timer display), hooks (server-synced countdown)
+    tournament/ setup, brackets, schedule, bracket PDF (/tournament/print/:categoryId)
+  shared/       ScoreDiffBar, ConfirmDialog, server-synced countdown hooks, result labels
 ```
-- Components only render server state and dispatch actions; no business rules in TSX.
+- Components only render server state and dispatch actions; no business rules in TSX (e.g. "next warning disqualifies" comes from the view).
 - One display component per concept (e.g. the score-difference bar), not copies per page.
+
+Known gaps (pilot scope, spec §0):
+- No PINs/auth: any device can open any page; result correction is "chief judge only" only by being on the bracket screen.
+- `MatchSchedule.tsx` priorities are hardcoded to one past tournament's categories.
+- Wake Lock needs HTTPS; on plain-HTTP LAN judges must disable auto-lock.
 
 ## Conventions
 

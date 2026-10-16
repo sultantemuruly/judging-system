@@ -1,8 +1,9 @@
-import React from 'react';
+import type { ReactElement } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { TournamentState, BracketMatch, Bracket, WeightCategory } from './api/protocol';
-import { sendAction } from './api/socket';
-import { ArrowLeft, Crown, RotateCcw, Swords } from 'lucide-react';
+import type { TournamentState, BracketMatch, Bracket, WeightCategory } from '../../api/protocol';
+import { sendAction } from '../../api/socket';
+import { ArrowLeft, Crown, Lock, Medal, Printer, RotateCcw, Swords } from 'lucide-react';
+import BracketBoard from './BracketBoard';
 
 interface Props {
   tournament: TournamentState;
@@ -55,33 +56,37 @@ export default function BracketView({ tournament }: Props) {
               </p>
             </div>
           </div>
-          <button
-            onClick={() => {
-              if (window.confirm('Are you sure you want to regenerate this bracket? All current matches and results will be lost.')) {
-                sendAction('GENERATE_BRACKET', { category_id: categoryId });
-              }
-            }}
-            className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-bold rounded-xl transition-all flex items-center gap-2 border border-zinc-700 cursor-pointer"
-          >
-            <RotateCcw size={14} /> Regenerate
-          </button>
+          <div className="flex items-center gap-2">
+            <Placings bracket={bracket} category={category} />
+            <button
+              onClick={() => navigate(`/tournament/print/${categoryId}`)}
+              className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-bold rounded-xl transition-all flex items-center gap-2 border border-zinc-700 cursor-pointer"
+            >
+              <Printer size={14} /> Print / PDF
+            </button>
+            {bracket.locked ? (
+              <span className="px-3 py-2 text-xs font-bold text-zinc-500 flex items-center gap-1.5" title="A fight was decided: the bracket can no longer be regenerated">
+                <Lock size={13} /> Locked
+              </span>
+            ) : (
+              <button
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to regenerate this bracket? All current matches will be lost.')) {
+                    sendAction('GENERATE_BRACKET', { category_id: categoryId });
+                  }
+                }}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-bold rounded-xl transition-all flex items-center gap-2 border border-zinc-700 cursor-pointer"
+              >
+                <RotateCcw size={14} /> Regenerate
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Bracket */}
       <div className="p-6 overflow-x-auto">
-        <SymmetricBracketTree
-          bracket={bracket}
-          category={category}
-          activeBracketMatchId={tournament.active_match_bracket_match_id}
-          onStartMatch={(matchId) => {
-            sendAction('START_BRACKET_MATCH', { category_id: categoryId, match_id: matchId });
-            navigate('/');
-          }}
-          onSetWinner={(matchId, winnerId) => {
-            sendAction('SET_MATCH_WINNER', { category_id: categoryId, match_id: matchId, winner_id: winnerId });
-          }}
-        />
+        <BracketBoard tournament={tournament} category={category} bracket={bracket} />
       </div>
     </div>
   );
@@ -100,14 +105,16 @@ export interface SymmetricBracketTreeProps {
   category: WeightCategory;
   activeBracketMatchId: string;
   onStartMatch: (matchId: string) => void;
-  onSetWinner: (matchId: string, winnerId: string) => void;
+  onWalkover: (match: BracketMatch) => void;
+  onCorrect: (match: BracketMatch) => void;
 }
 
 export function SymmetricBracketTree({
   bracket,
   activeBracketMatchId,
   onStartMatch,
-  onSetWinner,
+  onWalkover,
+  onCorrect,
 }: SymmetricBracketTreeProps) {
   const totalRounds = bracket.total_rounds;
 
@@ -159,7 +166,7 @@ export function SymmetricBracketTree({
   const S = '#3f3f46'; // connector stroke colour
 
   // Build all columns + connectors
-  const elements: React.ReactElement[] = [];
+  const elements: ReactElement[] = [];
 
   for (let round = 1; round <= totalRounds; round++) {
     const matches = matchesByRound[round] || [];
@@ -189,7 +196,8 @@ export function SymmetricBracketTree({
             match={match}
             isActive={activeBracketMatchId === match.id}
             onStart={() => onStartMatch(match.id)}
-            onSetWinner={(wId) => onSetWinner(match.id, wId)}
+            onWalkover={() => onWalkover(match)}
+            onCorrect={() => onCorrect(match)}
           />
         </foreignObject>
       );
@@ -304,12 +312,14 @@ function MatchCard({
   match,
   isActive,
   onStart,
-  onSetWinner,
+  onWalkover,
+  onCorrect,
 }: {
   match: BracketMatch;
   isActive: boolean;
   onStart: () => void;
-  onSetWinner: (winnerId: string) => void;
+  onWalkover: () => void;
+  onCorrect: () => void;
 }) {
   const hasRed = !!match.fighter_red_id;
   const hasBlue = !!match.fighter_blue_id;
@@ -373,39 +383,54 @@ function MatchCard({
 
       {/* Action Footer */}
       {hasBothFighters && isPending && (
-        <button
-          onClick={onStart}
-          className="w-full py-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer border-t border-zinc-800/50"
-        >
-          <Swords size={11} /> Start Fight
-        </button>
+        <div className="flex border-t border-zinc-800/50">
+          <button
+            onClick={e => { e.stopPropagation(); onStart(); }}
+            className="flex-1 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Swords size={11} /> Start Fight
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); onWalkover(); }}
+            title="Opponent did not show: win by walkover"
+            className="px-3 py-1.5 text-zinc-500 hover:text-white hover:bg-zinc-700/50 text-[10px] font-bold uppercase cursor-pointer border-l border-zinc-800/50"
+          >
+            WO
+          </button>
+        </div>
       )}
       {isActive && (
         <div className="w-full py-1.5 bg-emerald-600/30 text-emerald-400 text-[10px] font-bold uppercase tracking-wider text-center animate-pulse border-t border-emerald-800/30">
           ● LIVE
         </div>
       )}
-      {isCompleted && hasBothFighters && (
-        <div className="flex border-t border-zinc-800/50">
+      {isCompleted && (
+        <div className="flex items-center border-t border-zinc-800/50 text-[10px] font-bold uppercase">
+          <span className="flex-1 px-3 py-1 text-zinc-400" title={match.corrections?.length ? 'Result corrected by the chief judge' : undefined}>
+            {match.method}{match.votes ? ` ${match.votes}` : ''}{match.corrections?.length ? ' · corrected' : ''}
+          </span>
           <button
-            onClick={() => onSetWinner(match.fighter_red_id)}
-            className={`flex-1 py-1 text-[9px] font-bold uppercase transition-all cursor-pointer ${
-              redIsWinner ? 'text-red-400 bg-red-900/10' : 'text-zinc-600 hover:text-red-400 hover:bg-red-900/10'
-            }`}
+            onClick={e => { e.stopPropagation(); onCorrect(); }}
+            className="px-3 py-1 text-zinc-600 hover:text-amber-400 hover:bg-amber-900/10 cursor-pointer"
           >
-            Red Wins
-          </button>
-          <div className="w-px bg-zinc-800/50" />
-          <button
-            onClick={() => onSetWinner(match.fighter_blue_id)}
-            className={`flex-1 py-1 text-[9px] font-bold uppercase transition-all cursor-pointer ${
-              blueIsWinner ? 'text-blue-400 bg-blue-900/10' : 'text-zinc-600 hover:text-blue-400 hover:bg-blue-900/10'
-            }`}
-          >
-            Blue Wins
+            Correct…
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** 1st, 2nd and both 3rd places as they become known (§8). */
+function Placings({ bracket, category }: { bracket: Bracket; category: WeightCategory }) {
+  const name = (id: string) => category.fighters.find(f => f.id === id)?.name ?? '';
+  const { first, second, third } = bracket.placings ?? { first: '', second: '', third: [] };
+  if (!first && !second && third.length === 0) return null;
+  return (
+    <div className="flex items-center gap-3 mr-3 text-xs font-bold">
+      {first && <span className="text-amber-400 flex items-center gap-1"><Crown size={13} /> {name(first)}</span>}
+      {second && <span className="text-zinc-300 flex items-center gap-1"><Medal size={13} /> {name(second)}</span>}
+      {third.map(id => <span key={id} className="text-orange-400 flex items-center gap-1"><Medal size={13} /> {name(id)}</span>)}
     </div>
   );
 }

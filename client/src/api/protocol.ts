@@ -118,7 +118,7 @@ export const emptyFight: FightView = {
   live_scores: true,
 };
 
-// ---- Tournament (mirrors server/tournament_models.go) ----
+// ---- Tournament (mirrors server/internal/tournament/model.go) ----
 
 export interface TournamentFighter {
   id: string;
@@ -164,6 +164,27 @@ export interface BracketMatch {
   fighter_blue_name: string;
   winner_id: string;
   status: BracketMatchStatus;
+  method?: Method;
+  votes?: string;
+  fight_id?: string;
+  corrections?: Correction[];
+}
+
+export type CorrectionReason = 'corners_switched' | 'operator_error' | 'protest';
+
+/** A result changed by the chief judge (§8); the old winner is kept. */
+export interface Correction {
+  at: number;
+  old_winner_id: string;
+  new_winner_id: string;
+  reason: CorrectionReason;
+}
+
+/** 1st, 2nd and both losing semi-finalists 3rd (§8); fighter IDs, '' while unknown. */
+export interface Placings {
+  first: string;
+  second: string;
+  third: string[];
 }
 
 export interface Bracket {
@@ -171,9 +192,14 @@ export interface Bracket {
   matches: BracketMatch[];
   total_rounds: number;
   generated: boolean;
+  /** A fight was decided: no regeneration, no adding or removing fighters. */
+  locked: boolean;
+  placings: Placings;
 }
 
 export interface TournamentState {
+  name: string;
+  date: string;
   categories: WeightCategory[];
   brackets: Record<string, Bracket>;
   active_match_category_id: string;

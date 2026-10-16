@@ -1,8 +1,8 @@
 import { useNavigate } from 'react-router-dom';
-import type { TournamentState } from './api/protocol';
-import { sendAction } from './api/socket';
+import type { TournamentState } from '../../api/protocol';
+import { sendAction } from '../../api/socket';
 import { ArrowLeft, LayoutGrid, Trophy } from 'lucide-react';
-import { SymmetricBracketTree } from './BracketView';
+import BracketBoard from './BracketBoard';
 
 interface Props {
   tournament: TournamentState;
@@ -91,30 +91,27 @@ export default function AllBracketsView({ tournament }: Props) {
                     View Alone →
                   </button>
                   <button
-                    onClick={() => {
-                      if (window.confirm('Are you sure you want to regenerate this bracket? All current matches and results will be lost.')) {
-                        sendAction('GENERATE_BRACKET', { category_id: category.id });
-                      }
-                    }}
-                    className="px-3 py-1.5 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 text-xs font-bold rounded-lg transition-all border border-zinc-700 cursor-pointer whitespace-nowrap"
+                    onClick={() => navigate(`/tournament/print/${category.id}`)}
+                    className="px-3 py-1.5 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-lg transition-all border border-zinc-700 cursor-pointer whitespace-nowrap"
                   >
-                    ↺ Regen
+                    Print / PDF
                   </button>
+                  {!bracket.locked && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Are you sure you want to regenerate this bracket? All current matches will be lost.')) {
+                          sendAction('GENERATE_BRACKET', { category_id: category.id });
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 text-xs font-bold rounded-lg transition-all border border-zinc-700 cursor-pointer whitespace-nowrap"
+                    >
+                      ↺ Regen
+                    </button>
+                  )}
                 </div>
 
                 {/* Bracket Tree */}
-                <SymmetricBracketTree
-                  bracket={bracket}
-                  category={category}
-                  activeBracketMatchId={tournament.active_match_bracket_match_id}
-                  onStartMatch={(matchId) => {
-                    sendAction('START_BRACKET_MATCH', { category_id: category.id, match_id: matchId });
-                    navigate('/');
-                  }}
-                  onSetWinner={(matchId, winnerId) =>
-                    sendAction('SET_MATCH_WINNER', { category_id: category.id, match_id: matchId, winner_id: winnerId })
-                  }
-                />
+                <BracketBoard tournament={tournament} category={category} bracket={bracket} />
               </section>
             );
           })}
