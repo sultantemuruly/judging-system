@@ -32,15 +32,15 @@ const (
 
 // BracketMatch represents a single match in the bracket
 type BracketMatch struct {
-	ID             string             `json:"id"`
-	Round          int                `json:"round"`    // 1-based round number
-	Position       int                `json:"position"` // Position within the round (0-based)
-	FighterRedID   string             `json:"fighter_red_id"`
-	FighterBlueID  string             `json:"fighter_blue_id"`
-	FighterRedName string             `json:"fighter_red_name"`
-	FighterBlueName string            `json:"fighter_blue_name"`
-	WinnerID       string             `json:"winner_id"`
-	Status         BracketMatchStatus `json:"status"`
+	ID              string             `json:"id"`
+	Round           int                `json:"round"`    // 1-based round number
+	Position        int                `json:"position"` // Position within the round (0-based)
+	FighterRedID    string             `json:"fighter_red_id"`
+	FighterBlueID   string             `json:"fighter_blue_id"`
+	FighterRedName  string             `json:"fighter_red_name"`
+	FighterBlueName string             `json:"fighter_blue_name"`
+	WinnerID        string             `json:"winner_id"`
+	Status          BracketMatchStatus `json:"status"`
 }
 
 // Bracket represents the complete bracket for a weight category
@@ -53,8 +53,8 @@ type Bracket struct {
 
 // TournamentState holds the entire tournament state
 type TournamentState struct {
-	Categories                []WeightCategory   `json:"categories"`
+	Categories                []WeightCategory    `json:"categories"`
 	Brackets                  map[string]*Bracket `json:"brackets"` // keyed by category ID
-	ActiveMatchCategoryID     string             `json:"active_match_category_id"`
-	ActiveMatchBracketMatchID string             `json:"active_match_bracket_match_id"`
+	ActiveMatchCategoryID     string              `json:"active_match_category_id"`
+	ActiveMatchBracketMatchID string              `json:"active_match_bracket_match_id"`
 }

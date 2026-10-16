@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { type MatchState, type TournamentState, connectWebSocket, subscribeToState, subscribeToTournament } from './socket'
+import { type TournamentState, connectWebSocket, subscribeToState, subscribeToTournament } from './socket'
+import { type FightView, emptyFight } from './api/protocol'
 import Dashboard from './Dashboard'
 import JudgeScreen from './JudgeScreen'
 import ViewerScreen from './ViewerScreen'
@@ -8,25 +9,6 @@ import BracketSetup from './BracketSetup'
 import BracketView from './BracketView'
 import AllBracketsView from './AllBracketsView'
 import MatchSchedule from './MatchSchedule'
-
-const defaultState: MatchState = {
-  match_id: '',
-  current_round: 0,
-  rounds: [],
-  match_winner: null,
-  match_result: '',
-  official_warnings: { Red: 0, Blue: 0 },
-  warning_penalties: { Red: 0, Blue: 0 },
-  warning_history: [],
-  disqualified: null,
-  fight_ended: false,
-  red_fighter_name: '',
-  blue_fighter_name: '',
-  category_name: '',
-  rest_end_time: null,
-  round_duration: 0,
-  rest_duration: 0
-}
 
 const defaultTournament: TournamentState = {
   categories: [],
@@ -36,7 +18,7 @@ const defaultTournament: TournamentState = {
 }
 
 function App() {
-  const [state, setState] = useState<MatchState>(defaultState)
+  const [state, setState] = useState<FightView>(emptyFight)
   const [tournament, setTournament] = useState<TournamentState>(defaultTournament)
 
   useEffect(() => {
@@ -53,9 +35,9 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Dashboard state={state} tournament={tournament} />} />
-        <Route path="/judge/:id" element={<JudgeScreen state={state} />} />
-        <Route path="/viewer" element={<ViewerScreen state={state} />} />
+        <Route path="/" element={<Dashboard view={state} tournament={tournament} />} />
+        <Route path="/judge/:id" element={<JudgeScreen view={state} />} />
+        <Route path="/viewer" element={<ViewerScreen view={state} />} />
         <Route path="/tournament/setup" element={<BracketSetup tournament={tournament} />} />
         <Route path="/tournament/bracket/:categoryId" element={<BracketView tournament={tournament} />} />
         <Route path="/tournament/brackets/all" element={<AllBracketsView tournament={tournament} />} />

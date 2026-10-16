@@ -47,14 +47,14 @@ func (c *Client) readPump() {
 			}
 			break
 		}
-		
+
 		// Parse message to handle actions
 		var msg ClientMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
 			log.Printf("Error unmarshalling message: %v", err)
 			continue
 		}
-		
+
 		// Process message locally before broadcasting if needed
 		ProcessAction(c.hub, msg)
 	}
@@ -108,12 +108,11 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256)}
+	// The new client gets the full current state before anything else.
+	client.send <- stateMessage()
+	client.send <- tournamentMessage()
 	client.hub.register <- client
 
 	go client.writePump()
 	go client.readPump()
-
-	// Initially send the current state
-	BroadcastState(client.hub)
-	BroadcastTournamentState(client.hub)
 }

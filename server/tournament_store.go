@@ -9,6 +9,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"judging-server/internal/match"
 )
 
 const tournamentDataFile = "tournament_data.json"
@@ -68,19 +70,18 @@ func loadTournamentState() error {
 
 // ---- Broadcasting ----
 
-func BroadcastTournamentState(hub *Hub) {
+func tournamentMessage() []byte {
 	tournamentMutex.RLock()
 	defer tournamentMutex.RUnlock()
-
-	msg := ServerMessage{
-		Type:    "TOURNAMENT_STATE_UPDATE",
-		Payload: tournamentState,
+	b, err := json.Marshal(ServerMessage{Type: "TOURNAMENT_STATE_UPDATE", Payload: tournamentState, ServerTime: nowMs()})
+	if err != nil {
+		log.Printf("marshal tournament: %v", err)
 	}
+	return b
+}
 
-	bytes, err := json.Marshal(msg)
-	if err == nil {
-		hub.broadcast <- bytes
-	}
+func BroadcastTournamentState(hub *Hub) {
+	hub.broadcast <- tournamentMessage()
 }
 
 // ---- Category CRUD ----
@@ -619,109 +620,116 @@ func advanceWinner(bracket *Bracket, fromRound, fromPosition int, winnerID, winn
 
 // ---- Match Integration ----
 
-// StartBracketMatch sets up the judging system for a bracket match
+func findBracketMatch(ref match.BracketRef) (*Bracket, int) {
+	bracket, ok := tournamentState.Brackets[ref.CategoryID]
+	if !ok {
+		return nil, -1
+	}
+	for i, m := range bracket.Matches {
+		if m.ID == ref.MatchID {
+			return bracket, i
+		}
+	}
+	return bracket, -1
+}
+
+// StartBracketMatch starts a fight for a bracket match. Caller holds tournamentMutex.
 func StartBracketMatch(hub *Hub, categoryID, bracketMatchID string) bool {
 	catIdx := findCategoryIndex(categoryID)
 	if catIdx < 0 {
 		log.Printf("Category not found: %s", categoryID)
 		return false
 	}
-
-	bracket, exists := tournamentState.Brackets[categoryID]
-	if !exists {
-		log.Printf("Bracket not found for category: %s", categoryID)
-		return false
-	}
-
-	var matchPtr *BracketMatch
-	var matchIdx int
-	for i, m := range bracket.Matches {
-		if m.ID == bracketMatchID {
-			matchPtr = &bracket.Matches[i]
-			matchIdx = i
-			break
-		}
-	}
-
-	if matchPtr == nil {
+	ref := match.BracketRef{CategoryID: categoryID, MatchID: bracketMatchID}
+	bracket, idx := findBracketMatch(ref)
+	if idx < 0 {
 		log.Printf("Bracket match not found: %s", bracketMatchID)
 		return false
 	}
-
-	if matchPtr.FighterRedID == "" || matchPtr.FighterBlueID == "" {
+	m := bracket.Matches[idx]
+	if m.FighterRedID == "" || m.FighterBlueID == "" {
 		log.Printf("Match doesn't have both fighters yet")
 		return false
 	}
-
-	if matchPtr.Status == BracketMatchCompleted || matchPtr.Status == BracketMatchBye {
+	if m.Status == BracketMatchCompleted || m.Status == BracketMatchBye {
 		log.Printf("Match already completed")
 		return false
 	}
 
-	// Set bracket match as active
-	bracket.Matches[matchIdx].Status = BracketMatchActive
+	bracket.Matches[idx].Status = BracketMatchActive
 	tournamentState.ActiveMatchCategoryID = categoryID
 	tournamentState.ActiveMatchBracketMatchID = bracketMatchID
 
-	// Reset the judging system state and set fighter info
-	stateMutex.Lock()
-	resetState()
-	appState.RedFighterName = matchPtr.FighterRedName
-	appState.BlueFighterName = matchPtr.FighterBlueName
 	cat := tournamentState.Categories[catIdx]
-	appState.CategoryName = cat.Name + " " + cat.Sex + " " + cat.Gender + " " + cat.Discipline
-	stateMutex.Unlock()
-
+	old := startFight(match.FightConfig{
+		RedName:  m.FighterRedName,
+		BlueName: m.FighterBlueName,
+		Category: cat.Name + " " + cat.Sex + " " + cat.Gender + " " + cat.Discipline,
+		Bracket:  &ref,
+	})
+	// The replaced fight's bracket match goes back to the queue unless it was decided.
+	if old.Config.Bracket != nil && *old.Config.Bracket != ref && !old.Result().Final {
+		releaseBracketMatchLocked(*old.Config.Bracket)
+	}
 	return true
 }
 
-// CompleteBracketMatch records the winner and advances them in the bracket
-func CompleteBracketMatch(hub *Hub, winner Fighter) {
+// CompleteBracketMatch records a fight result in its bracket match and advances the winner.
+func CompleteBracketMatch(hub *Hub, ref match.BracketRef, res match.Result) error {
 	tournamentMutex.Lock()
-	defer tournamentMutex.Unlock()
-
-	categoryID := tournamentState.ActiveMatchCategoryID
-	bracketMatchID := tournamentState.ActiveMatchBracketMatchID
-
-	if categoryID == "" || bracketMatchID == "" {
-		return // No active tournament match
+	bracket, idx := findBracketMatch(ref)
+	if idx < 0 {
+		tournamentMutex.Unlock()
+		return fmt.Errorf("bracket match %s/%s not found", ref.CategoryID, ref.MatchID)
 	}
-
-	bracket, exists := tournamentState.Brackets[categoryID]
-	if !exists {
-		return
+	m := bracket.Matches[idx]
+	if m.Status != BracketMatchActive {
+		tournamentMutex.Unlock()
+		return fmt.Errorf("bracket match %s is %s, not ACTIVE", m.ID, m.Status)
 	}
-
-	for i, match := range bracket.Matches {
-		if match.ID == bracketMatchID {
-			var winnerID, winnerName string
-			if winner == RedFighter {
-				winnerID = match.FighterRedID
-				winnerName = match.FighterRedName
-			} else {
-				winnerID = match.FighterBlueID
-				winnerName = match.FighterBlueName
-			}
-
-			bracket.Matches[i].WinnerID = winnerID
-			bracket.Matches[i].Status = BracketMatchCompleted
-
-			// Advance winner to next round
-			advanceWinner(bracket, match.Round, match.Position, winnerID, winnerName, categoryID)
-
-			break
-		}
+	var winnerID, winnerName string
+	switch res.Winner {
+	case match.Red:
+		winnerID, winnerName = m.FighterRedID, m.FighterRedName
+	case match.Blue:
+		winnerID, winnerName = m.FighterBlueID, m.FighterBlueName
+	default:
+		tournamentMutex.Unlock()
+		return fmt.Errorf("bracket match %s: no winner in result %+v", m.ID, res)
 	}
+	bracket.Matches[idx].WinnerID = winnerID
+	bracket.Matches[idx].Status = BracketMatchCompleted
+	advanceWinner(bracket, m.Round, m.Position, winnerID, winnerName, ref.CategoryID)
+	clearActiveMatch(ref)
+	saveTournamentState()
+	tournamentMutex.Unlock()
 
-	// Clear active match
-	tournamentState.ActiveMatchCategoryID = ""
-	tournamentState.ActiveMatchBracketMatchID = ""
+	BroadcastTournamentState(hub)
+	return nil
+}
 
-	// Persist and broadcast updated tournament state
+// ReleaseBracketMatch puts an unfinished bracket match back to PENDING.
+func ReleaseBracketMatch(hub *Hub, ref match.BracketRef) {
+	tournamentMutex.Lock()
+	releaseBracketMatchLocked(ref)
 	saveTournamentState()
 	tournamentMutex.Unlock()
 	BroadcastTournamentState(hub)
-	tournamentMutex.Lock()
+}
+
+func releaseBracketMatchLocked(ref match.BracketRef) {
+	bracket, idx := findBracketMatch(ref)
+	if idx >= 0 && bracket.Matches[idx].Status == BracketMatchActive {
+		bracket.Matches[idx].Status = BracketMatchPending
+	}
+	clearActiveMatch(ref)
+}
+
+func clearActiveMatch(ref match.BracketRef) {
+	if tournamentState.ActiveMatchCategoryID == ref.CategoryID && tournamentState.ActiveMatchBracketMatchID == ref.MatchID {
+		tournamentState.ActiveMatchCategoryID = ""
+		tournamentState.ActiveMatchBracketMatchID = ""
+	}
 }
 
 // SwapFighters swaps two fighters in the bracket
@@ -856,8 +864,8 @@ func ProcessTournamentAction(hub *Hub, msg ClientMessage) {
 
 	case "ADD_FIGHTER":
 		var p struct {
-			CategoryID string              `json:"category_id"`
-			Fighter    TournamentFighter    `json:"fighter"`
+			CategoryID string            `json:"category_id"`
+			Fighter    TournamentFighter `json:"fighter"`
 		}
 		if err := json.Unmarshal(payloadBytes, &p); err == nil {
 			if addFighter(p.CategoryID, p.Fighter) {
@@ -867,9 +875,9 @@ func ProcessTournamentAction(hub *Hub, msg ClientMessage) {
 
 	case "EDIT_FIGHTER":
 		var p struct {
-			CategoryID string              `json:"category_id"`
-			FighterID  string              `json:"fighter_id"`
-			Fighter    TournamentFighter    `json:"fighter"`
+			CategoryID string            `json:"category_id"`
+			FighterID  string            `json:"fighter_id"`
+			Fighter    TournamentFighter `json:"fighter"`
 		}
 		if err := json.Unmarshal(payloadBytes, &p); err == nil {
 			if editFighter(p.CategoryID, p.FighterID, p.Fighter) {

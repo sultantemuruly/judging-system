@@ -1,57 +1,4 @@
-
-export type Fighter = 'Red' | 'Blue';
-
-export interface Hit {
-  id: string;
-  fighter: Fighter;
-  time: number;
-  type: 'normal';
-  timestamp: number;
-}
-
-export interface JudgeHitTracker {
-  judge_id: string;
-  hits: Hit[];
-}
-
-export interface OfficialWarning {
-  id: string;
-  fighter: Fighter;
-  round: number;
-  time: number;
-}
-
-export type RoundStatusType = 'ROUND_NOT_STARTED' | 'ROUND_RUNNING' | 'ROUND_PAUSED' | 'ROUND_ENDED';
-
-export interface RoundState {
-  round_id: number;
-  status: RoundStatusType;
-  start_time: number | null;
-  end_time: number | null;
-  elapsed_time: number;
-  last_resume_time: number | null;
-  judge_hits: Record<string, JudgeHitTracker>;
-  knockdowns: Record<string, number>;
-}
-
-export interface MatchState {
-  match_id: string;
-  current_round: number;
-  rounds: RoundState[];
-  match_winner: Fighter | 'Draw' | null;
-  match_result: string;
-  official_warnings: Record<string, number>;
-  warning_penalties: Record<string, number>;
-  warning_history: OfficialWarning[];
-  disqualified: Fighter | null;
-  fight_ended: boolean;
-  red_fighter_name: string;
-  blue_fighter_name: string;
-  category_name: string;
-  rest_end_time: number | null;
-  round_duration: number;
-  rest_duration: number;
-}
+import type { FightView } from './api/protocol';
 
 // ---- Tournament Types ----
 
@@ -110,7 +57,7 @@ const SERVER_URL = isSecure
   : `ws://${window.location.hostname}:8080/ws`;
 
 let socket: WebSocket | null = null;
-type StateCallback = (state: MatchState) => void;
+type StateCallback = (state: FightView) => void;
 type TournamentCallback = (state: TournamentState) => void;
 const listeners = new Set<StateCallback>();
 const tournamentListeners = new Set<TournamentCallback>();
@@ -132,7 +79,7 @@ export function connectWebSocket() {
         if (!msgString) continue;
         const msg = JSON.parse(msgString);
         if (msg.type === "STATE_UPDATE") {
-          const state = msg.payload as MatchState;
+          const state = msg.payload as FightView;
           listeners.forEach(cb => cb(state));
         } else if (msg.type === "TOURNAMENT_STATE_UPDATE") {
           const state = msg.payload as TournamentState;
