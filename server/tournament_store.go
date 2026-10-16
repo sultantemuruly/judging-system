@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"judging-server/internal/match"
+	"judging-server/internal/ws"
 )
 
 var (
@@ -51,18 +52,33 @@ func loadTournamentState() error {
 
 // ---- Broadcasting ----
 
+// tournamentBroadcastMu and tournamentSeq order tournament frames like state frames.
+var (
+	tournamentBroadcastMu sync.Mutex
+	tournamentSeq         int64
+)
+
 func tournamentMessage() []byte {
+	tournamentBroadcastMu.Lock()
+	defer tournamentBroadcastMu.Unlock()
+	return tournamentMessageLocked()
+}
+
+func tournamentMessageLocked() []byte {
 	tournamentMutex.RLock()
 	defer tournamentMutex.RUnlock()
-	b, err := json.Marshal(ServerMessage{Type: "TOURNAMENT_STATE_UPDATE", Payload: tournamentState, ServerTime: nowMs()})
+	tournamentSeq++
+	b, err := json.Marshal(ServerMessage{Type: "TOURNAMENT_STATE_UPDATE", Payload: tournamentState, ServerTime: nowMs(), Seq: tournamentSeq})
 	if err != nil {
 		log.Printf("marshal tournament: %v", err)
 	}
 	return b
 }
 
-func BroadcastTournamentState(hub *Hub) {
-	hub.broadcast <- tournamentMessage()
+func BroadcastTournamentState(hub *ws.Hub) {
+	tournamentBroadcastMu.Lock()
+	defer tournamentBroadcastMu.Unlock()
+	hub.Broadcast(tournamentMessageLocked())
 }
 
 // ---- Category CRUD ----
@@ -617,7 +633,7 @@ func findBracketMatch(ref match.BracketRef) (*Bracket, int) {
 }
 
 // StartBracketMatch starts a fight for a bracket match. Caller holds tournamentMutex.
-func StartBracketMatch(hub *Hub, categoryID, bracketMatchID string) bool {
+func StartBracketMatch(hub *ws.Hub, categoryID, bracketMatchID string) bool {
 	catIdx := findCategoryIndex(categoryID)
 	if catIdx < 0 {
 		log.Printf("Category not found: %s", categoryID)
@@ -662,7 +678,7 @@ func StartBracketMatch(hub *Hub, categoryID, bracketMatchID string) bool {
 }
 
 // CompleteBracketMatch records a fight result in its bracket match and advances the winner.
-func CompleteBracketMatch(hub *Hub, ref match.BracketRef, res match.Result) error {
+func CompleteBracketMatch(hub *ws.Hub, ref match.BracketRef, res match.Result) error {
 	tournamentMutex.Lock()
 	bracket, idx := findBracketMatch(ref)
 	if idx < 0 {
@@ -696,7 +712,7 @@ func CompleteBracketMatch(hub *Hub, ref match.BracketRef, res match.Result) erro
 }
 
 // ReleaseBracketMatch puts an unfinished bracket match back to PENDING.
-func ReleaseBracketMatch(hub *Hub, ref match.BracketRef) {
+func ReleaseBracketMatch(hub *ws.Hub, ref match.BracketRef) {
 	tournamentMutex.Lock()
 	releaseBracketMatchLocked(ref)
 	saveTournamentState()
@@ -804,7 +820,7 @@ func SetMatchWinner(categoryID, matchID, winnerID string) bool {
 
 // ---- Tournament Action Processing ----
 
-func ProcessTournamentAction(hub *Hub, msg ClientMessage) {
+func ProcessTournamentAction(hub *ws.Hub, msg ClientMessage) error {
 	tournamentMutex.Lock()
 	defer tournamentMutex.Unlock()
 
@@ -938,10 +954,12 @@ func ProcessTournamentAction(hub *Hub, msg ClientMessage) {
 		}
 	}
 
-	if changed {
-		saveTournamentState()
-		tournamentMutex.Unlock()
-		BroadcastTournamentState(hub)
-		tournamentMutex.Lock()
+	if !changed {
+		return errRejected
 	}
+	saveTournamentState()
+	tournamentMutex.Unlock()
+	BroadcastTournamentState(hub)
+	tournamentMutex.Lock()
+	return nil
 }

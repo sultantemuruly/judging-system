@@ -6,11 +6,12 @@ import (
 	"time"
 
 	"judging-server/internal/clock"
+	"judging-server/internal/ws"
 )
 
 // testHub runs a hub whose broadcasts go nowhere, and isolates the test from
 // any tournament file in the working directory.
-func testHub(t *testing.T) *Hub {
+func testHub(t *testing.T) *ws.Hub {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	hub, err := setup("data", clock.NewFake(time.UnixMilli(1_700_000_000_000)))
@@ -18,16 +19,17 @@ func testHub(t *testing.T) *Hub {
 		t.Fatal(err)
 	}
 	t.Cleanup(theRing.Close)
+	theRing.SetSeats([4]bool{false, true, true, true})
 	return hub
 }
 
-func act(hub *Hub, typ string, payload any) {
+func act(hub *ws.Hub, typ string, payload any) error {
 	b, _ := json.Marshal(payload)
-	ProcessAction(hub, ClientMessage{Type: typ, Payload: b})
+	return ProcessAction(hub, ClientMessage{Type: typ, Payload: b})
 }
 
 // startTwoFighterBracket creates a category with two fighters and starts its only match.
-func startTwoFighterBracket(t *testing.T, hub *Hub) (catID string, m BracketMatch) {
+func startTwoFighterBracket(t *testing.T, hub *ws.Hub) (catID string, m BracketMatch) {
 	t.Helper()
 	act(hub, "ADD_CATEGORY", map[string]string{"name": "-60kg"})
 	catID = tournamentState.Categories[0].ID

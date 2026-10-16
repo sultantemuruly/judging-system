@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
-import { type TournamentState, sendAction } from './socket';
+import type { TournamentState } from './api/protocol';
+import { sendAction } from './api/socket';
 import { ArrowLeft, LayoutGrid, Trophy } from 'lucide-react';
 import { SymmetricBracketTree } from './BracketView';
 

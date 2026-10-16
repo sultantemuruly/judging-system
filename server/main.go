@@ -10,6 +10,7 @@ import (
 	"judging-server/internal/match"
 	"judging-server/internal/ring"
 	"judging-server/internal/store"
+	"judging-server/internal/ws"
 )
 
 // legacyTournamentFile is where tournament data lived before the data directory.
@@ -22,7 +23,7 @@ var (
 
 // setup opens the data directory, loads the tournament and restores the fight
 // that was on the ring. It is shared by main and the tests.
-func setup(dataDir string, clk clock.Clock) (*Hub, error) {
+func setup(dataDir string, clk clock.Clock) (*ws.Hub, error) {
 	st, err := store.Open(dataDir)
 	if err != nil {
 		return nil, err
@@ -32,14 +33,17 @@ func setup(dataDir string, clk clock.Clock) (*Hub, error) {
 		return nil, err
 	}
 
-	hub := newHub()
-	go hub.run()
+	a := &app{}
+	hub := ws.NewHub(a, nowMs)
+	a.hub = hub
+	go hub.Run()
 
-	theRing = ring.New(ring.Options{
+	var r *ring.Ring
+	r = ring.New(ring.Options{
 		Clock:   clk,
 		OpenLog: func(id string) (ring.Log, error) { return st.StartFight(id) },
 		OnChange: func() {
-			BroadcastState(hub)
+			broadcastState(hub, r)
 		},
 		OnDecided: func(f match.Fight) {
 			if f.Config.Bracket == nil {
@@ -50,6 +54,8 @@ func setup(dataDir string, clk clock.Clock) (*Hub, error) {
 			}
 		},
 	})
+
+	theRing, a.ring = r, r
 
 	id, events, err := st.CurrentFight()
 	switch {
@@ -80,6 +86,16 @@ func heartbeat(interval time.Duration) {
 	}
 }
 
+func httpHandler(hub *ws.Hub) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", hub.ServeWS)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+	return mux
+}
+
 func main() {
 	dataDir := os.Getenv("DATA_DIR")
 	if dataDir == "" {
@@ -91,16 +107,12 @@ func main() {
 	}
 	go heartbeat(time.Second)
 
-	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		serveWs(hub, w, r)
-	})
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-
-	log.Printf("Server is running at http://localhost:8080 (data in %s)", dataDir)
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	log.Printf("Server is running at http://localhost:%s (data in %s)", port, dataDir)
+	if err := http.ListenAndServe(":"+port, httpHandler(hub)); err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
 }

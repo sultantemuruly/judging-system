@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { type TournamentState, connectWebSocket, subscribeToState, subscribeToTournament } from './socket'
-import { type FightView, emptyFight } from './api/protocol'
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { type FightView, type TournamentState, emptyFight } from './api/protocol'
+import { connect, sessionForPath, subscribeToState, subscribeToTournament } from './api/socket'
 import Dashboard from './Dashboard'
-import JudgeScreen from './JudgeScreen'
+import JudgeScreen from './features/judge/JudgeScreen'
 import ViewerScreen from './ViewerScreen'
 import BracketSetup from './BracketSetup'
 import BracketView from './BracketView'
@@ -17,23 +17,27 @@ const defaultTournament: TournamentState = {
   active_match_bracket_match_id: '',
 }
 
+function SessionSync() {
+  const { pathname } = useLocation()
+  useEffect(() => {
+    connect(sessionForPath(pathname))
+  }, [pathname])
+  return null
+}
+
 function App() {
   const [state, setState] = useState<FightView>(emptyFight)
   const [tournament, setTournament] = useState<TournamentState>(defaultTournament)
 
   useEffect(() => {
-    connectWebSocket()
-    const unsub1 = subscribeToState((newState) => {
-      setState(newState)
-    })
-    const unsub2 = subscribeToTournament((newState) => {
-      setTournament(newState)
-    })
+    const unsub1 = subscribeToState(setState)
+    const unsub2 = subscribeToTournament(setTournament)
     return () => { unsub1(); unsub2(); }
   }, [])
 
   return (
     <BrowserRouter>
+      <SessionSync />
       <Routes>
         <Route path="/" element={<Dashboard view={state} tournament={tournament} />} />
         <Route path="/judge/:id" element={<JudgeScreen view={state} />} />
@@ -48,4 +52,3 @@ function App() {
 }
 
 export default App
-

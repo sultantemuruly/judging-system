@@ -201,14 +201,11 @@ func (r *Ring) View() match.FightView {
 	return v
 }
 
-// SetSeatConnected records whether a judge seat has a live device.
-func (r *Ring) SetSeatConnected(seat int, connected bool) {
-	if seat < 1 || seat > match.JudgeCount {
-		return
-	}
+// SetSeats records which judge seats (index 1–3) have a live device.
+func (r *Ring) SetSeats(seats [match.JudgeCount + 1]bool) {
 	r.mu.Lock()
-	changed := r.seats[seat] != connected
-	r.seats[seat] = connected
+	changed := r.seats != seats
+	r.seats = seats
 	r.mu.Unlock()
 	if changed {
 		r.opts.OnChange()

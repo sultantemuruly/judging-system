@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { type TournamentState, type TournamentFighter, type WeightCategory, type FightFormat, defaultFormat, sendAction } from './socket';
+import { type TournamentState, type TournamentFighter, type WeightCategory, type FightFormat, defaultFormat } from './api/protocol';
+import { sendAction } from './api/socket';
 import { Plus, Trash2, Edit3, Trophy, Medal, Users, ChevronRight, Swords, X, Check, LayoutGrid, CalendarDays } from 'lucide-react';
 
 interface Props {

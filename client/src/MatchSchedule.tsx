@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { type TournamentState, type BracketMatch } from './socket';
+import type { TournamentState, BracketMatch } from './api/protocol';
 import { ArrowLeft, CalendarDays, Zap, List } from 'lucide-react';
 
 interface Props {

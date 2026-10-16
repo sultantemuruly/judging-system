@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { type TournamentState, sendAction } from './socket';
-import type { Corner, FightView } from './api/protocol';
-import { Play, Pause, Square, RotateCcw, AlertTriangle, Shield, Swords, Settings, X, OctagonX } from 'lucide-react';
+import type { Corner, FightView, TournamentState } from './api/protocol';
+import { sendAction, subscribeToResults } from './api/socket';
+import { useConnection } from './shared/useConnection';
+import { Play, Pause, Square, RotateCcw, AlertTriangle, Shield, Swords, Settings, X, OctagonX, WifiOff } from 'lucide-react';
 import ScoreDiffBar from './shared/ScoreDiffBar';
 import { useCountdown } from './shared/useCountdown';
 import { cornerName, formatMs, penaltySummary, resultBannerStyle, resultLabel, winnerTextColor } from './shared/fightText';
@@ -23,6 +24,17 @@ export default function Dashboard({ view, tournament }: Props) {
   const [roundDurationInput, setRoundDurationInput] = useState(120);
   const [restDurationInput, setRestDurationInput] = useState(60);
 
+  const { status } = useConnection();
+  const [notice, setNotice] = useState('');
+  useEffect(() => subscribeToResults((type, r) => {
+    if (!r.ok) setNotice(`${type}: ${r.reason === 'judges_not_connected' ? 'all 3 judges must be connected to start' : r.reason}`);
+  }), []);
+  useEffect(() => {
+    if (!notice) return;
+    const t = window.setTimeout(() => setNotice(''), 4000);
+    return () => clearTimeout(t);
+  }, [notice]);
+
   const openNewFight = () => {
     setRoundsInput(clock.rounds);
     setRoundDurationInput(clock.round_ms / 1000);
@@ -32,7 +44,9 @@ export default function Dashboard({ view, tournament }: Props) {
 
   const isRoundActive = clock.phase === 'RUNNING' || clock.phase === 'PAUSED';
   const fightOver = result.final;
-  const canStart = (clock.phase === 'NOT_STARTED' || clock.phase === 'REST') && !fightOver;
+  // The fight starts only when all three judges are connected (§1).
+  const allJudgesConnected = view.judges.length === 3 && view.judges.every(j => j.connected);
+  const canStart = (clock.phase === 'REST' || (clock.phase === 'NOT_STARTED' && allJudgesConnected)) && !fightOver;
   const limitCorner = (['Red', 'Blue'] as Corner[]).find(c => corners[c].knockdown_limit);
   const alertCorner = (['Red', 'Blue'] as Corner[]).find(c => corners[c].knockdown_alert);
   const penalties = [
@@ -42,6 +56,17 @@ export default function Dashboard({ view, tournament }: Props) {
 
   return (
     <div className="h-screen w-screen flex flex-col items-center bg-zinc-950 p-2 sm:p-4 overscroll-none overflow-hidden">
+
+      {status !== 'open' && (
+        <div className="fixed top-0 inset-x-0 z-[70] bg-red-600 text-white font-black text-center py-1.5 flex items-center justify-center gap-2">
+          <WifiOff size={16} /> No connection to the server — reconnecting…
+        </div>
+      )}
+      {notice && (
+        <div className="fixed bottom-4 inset-x-0 z-[70] flex justify-center pointer-events-none">
+          <div className="bg-yellow-500 text-black font-bold rounded-xl px-5 py-2.5 shadow-xl">{notice}</div>
+        </div>
+      )}
 
       {/* Header controls */}
       <div className="w-full max-w-6xl flex justify-between items-center mb-2 border-b border-zinc-800 pb-2 flex-shrink-0">
@@ -66,6 +91,13 @@ export default function Dashboard({ view, tournament }: Props) {
           )}
         </div>
         <div className="flex gap-3 items-center">
+          <div className="flex gap-1.5" title="Judge phones">
+            {view.judges.map(j => (
+              <span key={j.seat} className={`px-2 py-1 rounded-lg text-[11px] font-black border ${j.connected ? 'bg-emerald-900/40 text-emerald-300 border-emerald-700/50' : 'bg-red-900/40 text-red-300 border-red-700/50 animate-pulse'}`}>
+                J{j.seat} {j.connected ? '●' : '○'}
+              </span>
+            ))}
+          </div>
           <button
             className="px-4 py-2 bg-zinc-800 rounded-xl hover:bg-zinc-700 transition-all cursor-pointer flex items-center gap-2 text-sm font-bold text-zinc-300 border border-zinc-700"
             onClick={openNewFight}
@@ -78,7 +110,7 @@ export default function Dashboard({ view, tournament }: Props) {
 
           <button
             disabled={!canStart}
-            title="Start round"
+            title={clock.phase === 'NOT_STARTED' && !allJudgesConnected ? 'Waiting for all 3 judges to connect' : 'Start round'}
             className="p-3 bg-zinc-800 rounded-full hover:bg-zinc-700 disabled:opacity-30 transition-all cursor-pointer"
             onClick={() => sendAction('START_ROUND')}
           >
@@ -273,6 +305,7 @@ export default function Dashboard({ view, tournament }: Props) {
               <div key={judge.seat} className="bg-zinc-900/80 border border-zinc-800 rounded-xl p-2 px-4 flex items-center gap-4 shadow-sm">
                 <div className="w-20 text-center flex-shrink-0 border-r border-zinc-800 pr-4">
                   <div className="text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${judge.connected ? 'bg-emerald-400' : 'bg-red-500 animate-pulse'}`} title={judge.connected ? 'connected' : 'disconnected'} />
                     JUDGE <span className="text-zinc-500 text-base">{judge.seat}</span>
                   </div>
                   {judge.decision_needed && (

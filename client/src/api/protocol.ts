@@ -113,3 +113,100 @@ export const emptyFight: FightView = {
   medical: { active: false, started_at: 0, ends_at: 0 },
   live_scores: true,
 };
+
+// ---- Tournament (mirrors server/tournament_models.go) ----
+
+export interface TournamentFighter {
+  id: string;
+  name: string;
+  city: string;
+  club: string;
+  is_previous_champion: boolean;
+  is_previous_second: boolean;
+}
+
+export interface WeightCategory {
+  id: string;
+  name: string;
+  gender: string;
+  sex: string;
+  discipline: string;
+  format: FightFormat;
+  fighters: TournamentFighter[];
+}
+
+/** A category's fight format (§2) and knockdown limits (§5). */
+export interface FightFormat {
+  rounds: number;
+  round_seconds: number;
+  rest_seconds: number;
+  kd_limit_round: number;
+  kd_limit_fight: number;
+}
+
+export const defaultFormat: FightFormat = {
+  rounds: 3, round_seconds: 120, rest_seconds: 60, kd_limit_round: 3, kd_limit_fight: 4,
+};
+
+export type BracketMatchStatus = 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'BYE';
+
+export interface BracketMatch {
+  id: string;
+  round: number;
+  position: number;
+  fighter_red_id: string;
+  fighter_blue_id: string;
+  fighter_red_name: string;
+  fighter_blue_name: string;
+  winner_id: string;
+  status: BracketMatchStatus;
+}
+
+export interface Bracket {
+  category_id: string;
+  matches: BracketMatch[];
+  total_rounds: number;
+  generated: boolean;
+}
+
+export interface TournamentState {
+  categories: WeightCategory[];
+  brackets: Record<string, Bracket>;
+  active_match_category_id: string;
+  active_match_bracket_match_id: string;
+}
+
+// ---- Wire frames (mirror server/internal/ws/protocol.go) ----
+
+export type Role = 'operator' | 'judge' | 'viewer';
+
+export interface Session {
+  role: Role;
+  seat?: number;
+}
+
+/** Client → server. */
+export interface ActionFrame {
+  id: string;
+  type: string;
+  payload: unknown;
+  client_time?: number;
+  offline?: boolean;
+}
+
+/** Server → client. */
+export interface ServerFrame {
+  type: 'STATE_UPDATE' | 'TOURNAMENT_STATE_UPDATE' | 'ACK' | 'NACK' | 'TIME_SYNC' | 'SESSION_REPLACED';
+  payload: unknown;
+  server_time: number;
+  seq?: number;
+}
+
+export interface AckPayload {
+  id: string;
+}
+
+export interface NackPayload {
+  id: string;
+  reason: string;
+}

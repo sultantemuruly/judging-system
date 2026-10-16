@@ -1,6 +1,7 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { type TournamentState, type BracketMatch, type Bracket, type WeightCategory, sendAction } from './socket';
+import type { TournamentState, BracketMatch, Bracket, WeightCategory } from './api/protocol';
+import { sendAction } from './api/socket';
 import { ArrowLeft, Crown, RotateCcw, Swords } from 'lucide-react';
 
 interface Props {

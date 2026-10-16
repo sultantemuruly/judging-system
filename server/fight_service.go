@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"judging-server/internal/match"
+	"judging-server/internal/ring"
+	"judging-server/internal/ws"
 )
 
 // standaloneFormat is the format of fights started with NEW_FIGHT (not from a bracket).
@@ -33,11 +36,19 @@ type stateUpdate struct {
 }
 
 // stateMessage is the STATE_UPDATE frame for the current fight.
-func stateMessage() []byte {
+func stateMessage(r *ring.Ring) []byte {
+	broadcastMu.Lock()
+	defer broadcastMu.Unlock()
+	return stateMessageLocked(r)
+}
+
+func stateMessageLocked(r *ring.Ring) []byte {
+	stateSeq++
 	b, err := json.Marshal(ServerMessage{
 		Type:       "STATE_UPDATE",
-		Payload:    stateUpdate{FightView: theRing.View(), LiveScores: showLiveScores},
+		Payload:    stateUpdate{FightView: r.View(), LiveScores: showLiveScores},
 		ServerTime: nowMs(),
+		Seq:        stateSeq,
 	})
 	if err != nil {
 		log.Printf("marshal state: %v", err)
@@ -45,14 +56,19 @@ func stateMessage() []byte {
 	return b
 }
 
-// broadcastMu keeps state frames in the order they were computed, so a slow
-// sender can never overwrite a newer view with an older one.
-var broadcastMu sync.Mutex
+// broadcastMu keeps state frames in the order they were computed, and stateSeq
+// numbers them, so a client never replaces a newer view with an older one.
+var (
+	broadcastMu sync.Mutex
+	stateSeq    int64
+)
 
-func BroadcastState(hub *Hub) {
+func BroadcastState(hub *ws.Hub) { broadcastState(hub, theRing) }
+
+func broadcastState(hub *ws.Hub, r *ring.Ring) {
 	broadcastMu.Lock()
 	defer broadcastMu.Unlock()
-	hub.broadcast <- stateMessage()
+	hub.Broadcast(stateMessageLocked(r))
 }
 
 // Payloads of fight actions.
@@ -61,6 +77,7 @@ type fightPayload struct {
 	Corner   match.Corner    `json:"corner"`
 	Method   match.Method    `json:"method"`
 	TargetID string          `json:"target_id"`
+	FightID  string          `json:"fight_id"`
 	// NEW_FIGHT
 	Rounds       int `json:"rounds"`
 	RoundSeconds int `json:"round_seconds"`
@@ -108,13 +125,19 @@ func actionToEvent(msg ClientMessage) (match.Event, error) {
 			return match.Event{}, fmt.Errorf("%s payload: %w", msg.Type, err)
 		}
 	}
+	id := msg.ID
+	if id == "" {
+		id = newID("e-")
+	}
 	e := match.Event{
-		ID:       newID("e-"),
-		Type:     typ,
-		Actor:    match.Actor{Kind: match.Operator},
-		Corner:   p.Corner,
-		Method:   p.Method,
-		TargetID: p.TargetID,
+		ID:         id,
+		ClientTime: msg.ClientTime,
+		Offline:    msg.Offline,
+		Type:       typ,
+		Actor:      match.Actor{Kind: match.Operator},
+		Corner:     p.Corner,
+		Method:     p.Method,
+		TargetID:   p.TargetID,
 	}
 	switch typ {
 	case match.Hit, match.HitUndone, match.JudgeDecision:
@@ -123,7 +146,7 @@ func actionToEvent(msg ClientMessage) (match.Event, error) {
 	return e, nil
 }
 
-func processFightAction(hub *Hub, msg ClientMessage) {
+func processFightAction(hub *ws.Hub, msg ClientMessage) error {
 	if msg.Type == "NEW_FIGHT" {
 		var p fightPayload
 		if len(msg.Payload) > 0 {
@@ -135,25 +158,55 @@ func processFightAction(hub *Hub, msg ClientMessage) {
 		old, err := theRing.NewFight(newID("f-"), standaloneFormat)
 		if err != nil {
 			log.Printf("NEW_FIGHT: %v", err)
-			return
+			return err
 		}
 		releaseBracketMatch(hub, old)
-		return
+		return nil
 	}
 
 	e, err := actionToEvent(msg)
 	if err != nil {
 		log.Printf("action rejected: %v", err)
-		return
+		return errRejected
 	}
-	if err := theRing.Apply(e); err != nil {
-		log.Printf("%s rejected: %v", msg.Type, err)
+	// The fight starts only when all three judges are connected (§1).
+	if e.Type == match.RoundStarted && theRing.Fight().Phase() == match.NotStarted && !theRing.AllSeatsConnected() {
+		return errJudgesNotConnected
 	}
+	return applyEvent(msg.Type, e)
+}
+
+// processJudgeAction applies an action from the judge on seat.
+func processJudgeAction(seat int, msg ClientMessage) error {
+	e, err := actionToEvent(msg)
+	if err != nil {
+		return errRejected
+	}
+	e.Actor = match.Actor{Kind: match.Judge, Seat: seat}
+	// A tap queued during another fight must not count in this one.
+	var p fightPayload
+	json.Unmarshal(msg.Payload, &p)
+	if p.FightID != "" && p.FightID != theRing.Fight().Config.FightID {
+		return errWrongFight
+	}
+	return applyEvent(msg.Type, e)
+}
+
+// applyEvent applies e to the ring; a repeated action ID is not an error.
+func applyEvent(action string, e match.Event) error {
+	err := theRing.Apply(e)
+	if errors.Is(err, match.ErrDuplicate) {
+		return nil
+	}
+	if err != nil {
+		log.Printf("%s rejected: %v", action, err)
+	}
+	return err
 }
 
 // releaseBracketMatch puts the bracket match of a fight that was replaced
 // before it finished back to PENDING.
-func releaseBracketMatch(hub *Hub, old match.Fight) {
+func releaseBracketMatch(hub *ws.Hub, old match.Fight) {
 	if old.Config.Bracket == nil || old.Result().Final {
 		return
 	}
