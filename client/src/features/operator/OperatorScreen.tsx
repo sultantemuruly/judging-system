@@ -28,6 +28,8 @@ type Dialog =
 const reasons: Record<string, string> = {
   judges_not_connected: 'All 3 judges must be connected to start the fight',
   no_connection: 'No connection to the server',
+  server_error: 'Server could not save the action (disk?) — nothing changed, try again',
+  result_not_recorded: 'Result confirmed, but the bracket could not record it — set the winner on the bracket screen',
 };
 
 export default function OperatorScreen({ view, tournament }: Props) {

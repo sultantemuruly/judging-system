@@ -237,6 +237,41 @@ func TestBracketLocksAfterFirstFight(t *testing.T) {
 	}
 }
 
+// The category's first fight is on the ring: regenerating or deleting would
+// leave its confirmed result nowhere to go.
+func TestBracketKeptWhileMatchOnRing(t *testing.T) {
+	s := newCategory(t, plain(4)...)
+	b := generate(t, s, 1)
+	m := matchAt(b, 1, 0)
+	if _, _, err := s.StartMatch(ref(m.ID)); err != nil {
+		t.Fatal(err)
+	}
+	if !b.Locked {
+		t.Fatal("a match on the ring must lock the bracket")
+	}
+	if err := s.GenerateBracket("c", nil, rand.New(rand.NewSource(2))); !errors.Is(err, ErrLocked) {
+		t.Errorf("regenerate: %v, want ErrLocked", err)
+	}
+	if err := s.DeleteCategory("c"); !errors.Is(err, ErrMatchOnRing) {
+		t.Errorf("delete category: %v, want ErrMatchOnRing", err)
+	}
+	if err := s.CompleteMatch(ref(m.ID), match.Result{Winner: match.Red, Method: match.PTS}, "fight-1"); err != nil {
+		t.Fatalf("the result still finds its match: %v", err)
+	}
+}
+
+// A fight taken off the ring before it started unlocks the bracket again.
+func TestReleasedMatchUnlocksBracket(t *testing.T) {
+	s := newCategory(t, plain(4)...)
+	b := generate(t, s, 1)
+	m := matchAt(b, 1, 0)
+	s.StartMatch(ref(m.ID))
+	s.ReleaseMatch(ref(m.ID))
+	if b.Locked {
+		t.Fatal("bracket still locked after its only started match was released")
+	}
+}
+
 func TestWalkoverWithoutFight(t *testing.T) {
 	s := newCategory(t, plain(4)...)
 	b := generate(t, s, 1)

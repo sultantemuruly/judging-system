@@ -16,7 +16,15 @@ import (
 // Log is where accepted events are persisted, one fight per log.
 type Log interface {
 	Append(match.Event) error
+	Close() error
 }
+
+// ErrPersist means the event could not be written to disk. Nothing changed;
+// the action can be sent again.
+var ErrPersist = errors.New("server_error")
+
+// ErrNotRecorded means the result was confirmed but OnDecided failed to record it.
+var ErrNotRecorded = errors.New("result_not_recorded")
 
 type Options struct {
 	Clock clock.Clock
@@ -24,8 +32,10 @@ type Options struct {
 	OpenLog func(fightID string) (Log, error)
 	// OnChange runs after every accepted event, outside the ring's lock.
 	OnChange func()
-	// OnDecided runs once when a fight's result is confirmed (§7), outside the lock.
-	OnDecided func(match.Fight)
+	// OnDecided runs once when a fight's result is confirmed (§7), outside the
+	// lock. Its error is returned from Apply wrapped in ErrNotRecorded; the
+	// confirmation itself stays accepted.
+	OnDecided func(match.Fight) error
 }
 
 type Ring struct {
@@ -44,7 +54,7 @@ func New(opts Options) *Ring {
 		opts.OnChange = func() {}
 	}
 	if opts.OnDecided == nil {
-		opts.OnDecided = func(match.Fight) {}
+		opts.OnDecided = func(match.Fight) error { return nil }
 	}
 	return &Ring{opts: opts, alarm: clock.NewAlarm(opts.Clock)}
 }
@@ -61,15 +71,19 @@ func (r *Ring) NewFight(id string, cfg match.FightConfig) (match.Fight, error) {
 	}
 	l, err := r.opts.OpenLog(id)
 	if err != nil {
-		return match.Fight{}, err
+		return match.Fight{}, fmt.Errorf("%w: open log: %v", ErrPersist, err)
 	}
 	if err := l.Append(f.Events[0]); err != nil {
-		return match.Fight{}, err
+		l.Close()
+		return match.Fight{}, fmt.Errorf("%w: %v", ErrPersist, err)
 	}
 	r.mu.Lock()
-	old := r.fight
+	old, oldLog := r.fight, r.log
 	r.fight, r.log = f, l
 	r.armLocked()
+	if oldLog != nil {
+		oldLog.Close()
+	}
 	r.mu.Unlock()
 	r.opts.OnChange()
 	return old, nil
@@ -108,7 +122,8 @@ func (r *Ring) Restore(events []match.Event, l Log, lastSeen int64) error {
 }
 
 // Apply stamps e with the server time (unless set), validates it, writes it to
-// the log and then commits it. A rejected event changes nothing.
+// the log and then commits it. A rejected event changes nothing; the one
+// exception is ErrNotRecorded, returned after the event was committed.
 func (r *Ring) Apply(e match.Event) error {
 	if e.At == 0 {
 		e.At = r.now()
@@ -127,7 +142,7 @@ func (r *Ring) apply(e match.Event) error {
 	if r.log != nil {
 		if err := r.log.Append(next.Events[len(next.Events)-1]); err != nil {
 			r.mu.Unlock()
-			return fmt.Errorf("persist %s: %w", e.Type, err)
+			return fmt.Errorf("%w: persist %s: %v", ErrPersist, e.Type, err)
 		}
 	}
 	r.fight = next
@@ -137,7 +152,9 @@ func (r *Ring) apply(e match.Event) error {
 
 	r.opts.OnChange()
 	if decided {
-		r.opts.OnDecided(next)
+		if err := r.opts.OnDecided(next); err != nil {
+			return fmt.Errorf("%w: %v", ErrNotRecorded, err)
+		}
 	}
 	return nil
 }

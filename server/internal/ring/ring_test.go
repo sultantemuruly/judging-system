@@ -1,6 +1,7 @@
 package ring
 
 import (
+	"errors"
 	"reflect"
 	"sync"
 	"testing"
@@ -22,6 +23,8 @@ func (l *memLog) Append(e match.Event) error {
 	l.events = append(l.events, e)
 	return nil
 }
+
+func (l *memLog) Close() error { return nil }
 
 func newTestRing(t *testing.T) (*Ring, *clock.Fake) {
 	t.Helper()
@@ -70,6 +73,31 @@ func TestSpec_S12_RoundEndsWithoutOperator(t *testing.T) {
 	c.Advance(120 * time.Second)
 	if v := r.View(); v.Clock.Phase != match.Rest || v.Clock.Round != 2 {
 		t.Fatalf("round 2: %+v, want REST after round 2", v.Clock)
+	}
+}
+
+// The confirmation is kept even when the bracket can't record it, and the
+// operator is told instead of getting a plain ACK.
+func TestConfirmReportsUnrecordedResult(t *testing.T) {
+	c := clock.NewFake(time.UnixMilli(1_700_000_000_000))
+	r := New(Options{
+		Clock:     c,
+		OpenLog:   func(string) (Log, error) { return &memLog{}, nil },
+		OnDecided: func(match.Fight) error { return errors.New("bracket gone") },
+	})
+	if _, err := r.NewFight("f-1", match.FightConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	must(t, r, match.RoundStarted)
+	if err := r.Apply(match.Event{ID: "ko", Type: match.Stoppage, Actor: operator, Corner: match.Red, Method: match.KO}); err != nil {
+		t.Fatal(err)
+	}
+	err := r.Apply(match.Event{ID: "confirm", Type: match.ResultConfirmed, Actor: operator})
+	if !errors.Is(err, ErrNotRecorded) {
+		t.Fatalf("confirm: %v, want ErrNotRecorded", err)
+	}
+	if !r.Fight().Result().Confirmed {
+		t.Fatal("the confirmation must stay accepted")
 	}
 }
 

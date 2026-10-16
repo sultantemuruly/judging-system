@@ -64,5 +64,5 @@ const (
 type Session struct {
 	Role   Role
 	Seat   int    // 1–3 for judges
-	Device string // stable per browser, so a reconnect is not a takeover
+	Device string // stable per browser; only used to log takeovers by another device
 }

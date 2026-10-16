@@ -25,6 +25,19 @@ func (s *State) locked(categoryID string) bool {
 	return b != nil && b.Locked
 }
 
+// onRing reports whether one of the category's matches is on the ring: its
+// result must still find the match where it was when the fight started.
+func (s *State) onRing(categoryID string) bool {
+	if b := s.Brackets[categoryID]; b != nil {
+		for _, m := range b.Matches {
+			if m.Status == Active {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // SetInfo sets the tournament name and date printed on the bracket PDF.
 func (s *State) SetInfo(name, date string) {
 	s.Name, s.Date = strings.TrimSpace(name), strings.TrimSpace(date)
@@ -53,7 +66,12 @@ func (s *State) EditCategory(c Category) error {
 	return nil
 }
 
+// DeleteCategory removes a category and its bracket. Refused while one of its
+// matches is on the ring.
 func (s *State) DeleteCategory(id string) error {
+	if s.onRing(id) {
+		return ErrMatchOnRing
+	}
 	for i := range s.Categories {
 		if s.Categories[i].ID == id {
 			s.Categories = append(s.Categories[:i], s.Categories[i+1:]...)

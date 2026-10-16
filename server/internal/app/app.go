@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	mrand "math/rand"
 	"sync"
@@ -94,10 +95,11 @@ func (a *App) Close() { a.ring.Close() }
 func (a *App) nowMs() int64 { return clock.Ms(a.clock.Now()) }
 
 func (a *App) restoreFight() error {
+	// A log that can't be read is never replaced by an empty fight: the scores
+	// in it would vanish from the ring without anyone noticing.
 	id, events, err := a.store.CurrentFight()
 	if err != nil {
-		log.Printf("could not read the current fight, starting a new one: %v", err)
-		id = ""
+		return fmt.Errorf("read the current fight (fix or move the file named in %s/current_fight): %w", a.store.Dir(), err)
 	}
 	if id == "" || len(events) == 0 {
 		_, err := a.ring.NewFight(newID("f-"), a.standalone)

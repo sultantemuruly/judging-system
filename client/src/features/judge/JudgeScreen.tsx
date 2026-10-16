@@ -18,6 +18,7 @@ const refusals: Record<string, string> = {
   wrong_fight: 'Нажатие относится к прошлому бою',
   result_confirmed: 'Результат уже подтверждён',
   decision_not_needed: 'Решение не требуется',
+  server_error: 'Сбой на сервере — нажатие сохранено и будет отправлено повторно',
 };
 
 function vibrate(ms: number) {

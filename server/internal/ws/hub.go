@@ -80,16 +80,19 @@ func (h *Hub) Run() {
 // Broadcast sends a frame to every connection.
 func (h *Hub) Broadcast(b []byte) { h.broadcast <- b }
 
-// takeSeat gives the judge seat to c. The device that held it is told why and
-// disconnected, so one seat never has two devices (§1, S15).
+// takeSeat gives the judge seat to c. The connection that held it is told why
+// and disconnected, so one seat never has two devices (§1, S15). It is told
+// even when it is the same browser: a second tab must stop rather than
+// reconnect and take the seat back, over and over. A page that reconnects has
+// already dropped its old socket, so it never sees the message.
 func (h *Hub) takeSeat(c *Client) {
 	old := h.seats[c.session.Seat]
 	h.seats[c.session.Seat] = c
 	if old != nil && old != c {
 		if old.session.Device != c.session.Device {
 			log.Printf("ws: judge seat %d taken over by another device", c.session.Seat)
-			h.deliver(old, h.frame(TypeSessionReplaced, SessionReplacedPayload{Reason: "another_device"}))
 		}
+		h.deliver(old, h.frame(TypeSessionReplaced, SessionReplacedPayload{Reason: "another_device"}))
 		h.close(old)
 	}
 	h.seatsChanged()

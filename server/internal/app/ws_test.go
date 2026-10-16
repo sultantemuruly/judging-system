@@ -206,6 +206,20 @@ func TestSpec_S15_SecondPhoneTakesOverSeat(t *testing.T) {
 	}
 }
 
+// A second tab in the same browser has the same device ID; the first tab must
+// still be told, or it reconnects and the two take the seat from each other forever.
+func TestSecondTabSameDeviceReplacesFirst(t *testing.T) {
+	url, a, _ := wsServer(t)
+	j := judges(t, url)
+	second := dial(t, url, "role=judge&seat=1&device=phone-1")
+	j[1].next("SESSION_REPLACED", func(f ws.Frame) bool { return f.Type == ws.TypeSessionReplaced })
+	second.send("t", "UNDO_HIT", nil)
+	second.result("t") // the new tab is the one on the seat
+	if v := a.ring.View(); !v.Judges[0].Connected {
+		t.Fatalf("seat 1 = %+v, want connected", v.Judges[0])
+	}
+}
+
 func TestSpec_S16_GongGraceOverWebSocket(t *testing.T) {
 	url, _, clk := wsServer(t)
 	j := judges(t, url)

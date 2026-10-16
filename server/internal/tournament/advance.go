@@ -84,10 +84,12 @@ func (b *Bracket) autoAdvance(round, position int) {
 }
 
 // refresh recomputes what follows from the matches: the lock and the placings.
+// A match on the ring locks the bracket too, so its result still finds the
+// match it was started from.
 func (b *Bracket) refresh() {
 	b.Locked = false
 	for _, m := range b.Matches {
-		if m.Status == Completed {
+		if m.Status == Completed || m.Status == Active {
 			b.Locked = true
 		}
 	}

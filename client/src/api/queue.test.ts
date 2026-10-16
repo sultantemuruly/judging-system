@@ -43,6 +43,27 @@ describe('ActionQueue', () => {
     expect(new ActionQueue('queue:judge:2', storage).size).toBe(0);
   });
 
+  it('shares one queue between two tabs of the same seat', () => {
+    const storage = memoryStorage();
+    const tab1 = new ActionQueue('queue:judge:1', storage);
+    const tab2 = new ActionQueue('queue:judge:1', storage);
+    tab1.add(tap('a', 1));
+    tab2.add(tap('b', 2));
+    tab1.add(tap('c', 3));
+    tab2.settle('a');
+    expect(tab1.pending().map(a => a.id)).toEqual(['b', 'c']);
+  });
+
+  it('keeps working in memory when storage is full', () => {
+    const storage = memoryStorage();
+    const q = new ActionQueue('q', storage);
+    q.add(tap('a', 1));
+    storage.setItem = () => { throw new Error('QuotaExceededError'); };
+    q.add(tap('b', 2));
+    q.add(tap('c', 3));
+    expect(q.pending().map(a => a.id)).toEqual(['a', 'b', 'c']);
+  });
+
   it('works without storage and ignores corrupt data', () => {
     const q = new ActionQueue('q', null);
     q.add(tap('a', 1));

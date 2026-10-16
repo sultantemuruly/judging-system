@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -49,23 +50,44 @@ func (s *Store) fightPath(id string) string {
 // FightLog appends events of one fight. Every Append is synced to disk
 // before it returns, so an acknowledged event survives a crash.
 type FightLog struct {
-	mu sync.Mutex
-	f  *os.File
+	mu   sync.Mutex
+	f    *os.File
+	size int64 // length of the complete lines in the file
 }
 
 // StartFight opens (or creates) the log of a fight and makes it the current fight.
+// A torn last line left by a crash is cut off first, so the next event starts
+// on a line of its own.
 func (s *Store) StartFight(id string) (*FightLog, error) {
-	f, err := os.OpenFile(s.fightPath(id), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(s.fightPath(id), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, err
 	}
-	if err := WriteFileAtomic(filepath.Join(s.dir, currentFile), []byte(id)); err != nil {
+	size, err := completeLength(f)
+	if err == nil {
+		err = f.Truncate(size)
+	}
+	if err == nil {
+		err = WriteFileAtomic(filepath.Join(s.dir, currentFile), []byte(id))
+	}
+	if err != nil {
 		f.Close()
 		return nil, err
 	}
-	return &FightLog{f: f}, nil
+	return &FightLog{f: f, size: size}, nil
 }
 
+// completeLength is the length of f up to and including its last newline.
+func completeLength(f *os.File) (int64, error) {
+	data, err := io.ReadAll(io.NewSectionReader(f, 0, 1<<62))
+	if err != nil {
+		return 0, err
+	}
+	return int64(bytes.LastIndexByte(data, '\n') + 1), nil
+}
+
+// Append writes e as one line and syncs it. If that fails, the partial line is
+// cut off again, so a failed write never corrupts the lines after it.
 func (l *FightLog) Append(e match.Event) error {
 	b, err := json.Marshal(e)
 	if err != nil {
@@ -73,16 +95,25 @@ func (l *FightLog) Append(e match.Event) error {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if _, err := l.f.Write(append(b, '\n')); err != nil {
+	line := append(b, '\n')
+	if _, err = l.f.Write(line); err == nil {
+		err = l.f.Sync()
+	}
+	if err != nil {
+		if terr := l.f.Truncate(l.size); terr != nil {
+			log.Printf("store: cutting off a failed write: %v", terr)
+		}
 		return err
 	}
-	return l.f.Sync()
+	l.size += int64(len(line))
+	return nil
 }
 
 func (l *FightLog) Close() error { return l.f.Close() }
 
 // CurrentFight returns the ID and events of the fight that was on the ring,
-// or an empty ID if there is none. A torn last line (crash mid-write) is dropped.
+// or an empty ID if there is none. A torn last line (crash mid-write) is dropped:
+// its event was never synced, so it was never acknowledged.
 func (s *Store) CurrentFight() (string, []match.Event, error) {
 	b, err := os.ReadFile(filepath.Join(s.dir, currentFile))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -101,7 +132,11 @@ func (s *Store) ReadFight(id string) ([]match.Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	lines := bytes.Split(data, []byte("\n"))
+	complete := bytes.LastIndexByte(data, '\n') + 1
+	if complete < len(data) { // no trailing newline: the write was cut off
+		log.Printf("store: dropping torn last line of fight %s", id)
+	}
+	lines := bytes.Split(data[:complete], []byte("\n"))
 	var events []match.Event
 	for i, line := range lines {
 		if len(bytes.TrimSpace(line)) == 0 {
@@ -109,10 +144,6 @@ func (s *Store) ReadFight(id string) ([]match.Event, error) {
 		}
 		var e match.Event
 		if err := json.Unmarshal(line, &e); err != nil {
-			if i == len(lines)-1 { // no trailing newline: the write was cut off
-				log.Printf("store: dropping torn last line of fight %s", id)
-				break
-			}
 			return nil, fmt.Errorf("fight %s line %d: %w", id, i+1, err)
 		}
 		events = append(events, e)

@@ -11,9 +11,29 @@ interface Sample {
 }
 
 const MAX_SAMPLES = 8;
+/** The last measured offset is kept, so a tap made after a reload, before
+ *  the first reply from the server, still gets server time (§3). */
+const OFFSET_KEY = 'clock-offset';
 let samples: Sample[] = [];
-let offset = 0;
+let offset = loadOffset();
 let synced = false;
+
+function loadOffset(): number {
+  try {
+    const n = Number(localStorage.getItem(OFFSET_KEY));
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveOffset() {
+  try {
+    localStorage.setItem(OFFSET_KEY, String(Math.round(offset)));
+  } catch {
+    // Not kept: after a reload the device clock is used until the first sync.
+  }
+}
 
 /** Current server time in ms, as best known. */
 export function serverNow(): number {
@@ -30,6 +50,7 @@ export function addTimeSample(clientSent: number, serverTime: number, receivedAt
   samples = [...samples, { offset: serverTime + rtt / 2 - receivedAt, rtt }].slice(-MAX_SAMPLES);
   offset = samples.reduce((best, s) => (s.rtt < best.rtt ? s : best)).offset;
   synced = true;
+  saveOffset();
 }
 
 /** Any server frame carries server_time; it is only used until a real sample exists. */

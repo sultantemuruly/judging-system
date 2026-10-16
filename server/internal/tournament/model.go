@@ -20,6 +20,7 @@ var (
 	ErrNextMatchStarted  = errors.New("next_match_started")
 	ErrBadWinner         = errors.New("bad_winner")
 	ErrBadReason         = errors.New("bad_reason")
+	ErrMatchOnRing       = errors.New("match_on_ring")
 )
 
 // Fighter is a fighter registered in a category.
@@ -133,7 +134,7 @@ type Bracket struct {
 	Matches     []Match  `json:"matches"`
 	TotalRounds int      `json:"total_rounds"`
 	Generated   bool     `json:"generated"`
-	Locked      bool     `json:"locked"`   // a fight was decided: no regeneration, no fighter changes (§8)
+	Locked      bool     `json:"locked"`   // a fight was decided or is on the ring: no regeneration, no fighter changes (§8)
 	Placings    Placings `json:"placings"` // filled as results come in
 }
 

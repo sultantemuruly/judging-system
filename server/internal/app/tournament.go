@@ -70,16 +70,18 @@ func (a *App) change(fn func(*tournament.State) error) error {
 	return err
 }
 
-// fightDecided records a confirmed bracket fight in the bracket (§7).
-func (a *App) fightDecided(f match.Fight) {
+// fightDecided records a confirmed bracket fight in the bracket (§7). An error
+// reaches the operator as a NACK of the confirmation.
+func (a *App) fightDecided(f match.Fight) error {
 	ref := f.Config.Bracket
 	if ref == nil {
-		return
+		return nil
 	}
 	err := a.change(func(s *tournament.State) error { return s.CompleteMatch(*ref, f.Result(), f.Config.FightID) })
 	if err != nil {
 		log.Printf("bracket %s/%s: %v", ref.CategoryID, ref.MatchID, err)
 	}
+	return err
 }
 
 // releaseLocked puts the bracket match of a replaced, unconfirmed fight back
@@ -199,7 +201,7 @@ func (a *App) startBracketMatchLocked(s *tournament.State, ref match.BracketRef)
 	old, err := a.ring.NewFight(newID("f-"), cfg)
 	if err != nil {
 		s.ReleaseMatch(ref)
-		return err
+		return nackCode(err)
 	}
 	if old.Config.Bracket != nil && *old.Config.Bracket != ref && !old.Result().Confirmed {
 		s.ReleaseMatch(*old.Config.Bracket)

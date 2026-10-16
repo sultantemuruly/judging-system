@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"judging-server/internal/match"
+	"judging-server/internal/ring"
 	"judging-server/internal/ws"
 )
 
@@ -177,6 +178,16 @@ func (a *App) applyEvent(action string, e match.Event) error {
 	if err != nil {
 		log.Printf("%s rejected: %v", action, err)
 	}
+	return nackCode(err)
+}
+
+// nackCode reduces ring errors that carry details to their stable code.
+func nackCode(err error) error {
+	for _, code := range []error{ring.ErrPersist, ring.ErrNotRecorded} {
+		if errors.Is(err, code) {
+			return code
+		}
+	}
 	return err
 }
 
@@ -208,7 +219,7 @@ func (a *App) replaceFightLocked() error {
 	if released {
 		a.broadcastTournament()
 	}
-	return err
+	return nackCode(err)
 }
 
 // cancelFight takes a bracket fight that has not started off the ring; its

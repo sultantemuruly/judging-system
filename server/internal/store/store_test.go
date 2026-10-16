@@ -50,6 +50,44 @@ func TestTornLastLineIsDropped(t *testing.T) {
 	}
 }
 
+// A crash mid-write, a restart that keeps appending, and a second restart:
+// the fight must still load with every synced event.
+func TestTornLineIsCutOffBeforeAppending(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	l, _ := s.StartFight("f-3")
+	l.Append(match.Event{ID: "a", Type: match.FightCreated})
+	l.Close()
+	f, _ := os.OpenFile(s.fightPath("f-3"), os.O_APPEND|os.O_WRONLY, 0)
+	f.WriteString(`{"id":"b","ty`)
+	f.Close()
+
+	l, err := s.StartFight("f-3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Append(match.Event{ID: "c", Type: match.RoundStarted})
+	l.Close()
+
+	_, got, err := s.CurrentFight()
+	if err != nil || len(got) != 2 || got[0].ID != "a" || got[1].ID != "c" {
+		t.Fatalf("got %+v, err %v; want events a and c", got, err)
+	}
+}
+
+func TestFailedAppendLeavesLogReadable(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	l, _ := s.StartFight("f-4")
+	l.Append(match.Event{ID: "a", Type: match.FightCreated})
+	l.f.Close() // every following write fails
+	if err := l.Append(match.Event{ID: "b", Type: match.RoundStarted}); err == nil {
+		t.Fatal("append to a closed file succeeded")
+	}
+	_, got, err := s.CurrentFight()
+	if err != nil || len(got) != 1 {
+		t.Fatalf("got %d events, err %v; want the 1 synced event", len(got), err)
+	}
+}
+
 func TestNoCurrentFight(t *testing.T) {
 	s, _ := Open(t.TempDir())
 	id, events, err := s.CurrentFight()

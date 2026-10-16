@@ -34,6 +34,7 @@ func (s *State) StartMatch(ref match.BracketRef) (Match, Category, error) {
 		return Match{}, Category{}, ErrMatchDecided
 	}
 	b.Matches[i].Status = Active
+	b.refresh()
 	s.ActiveMatchCategoryID, s.ActiveMatchBracketMatchID = ref.CategoryID, ref.MatchID
 	return b.Matches[i], *c, nil
 }
@@ -66,6 +67,7 @@ func (s *State) CompleteMatch(ref match.BracketRef, res match.Result, fightID st
 func (s *State) ReleaseMatch(ref match.BracketRef) {
 	if b, i, err := s.MatchAt(ref); err == nil && b.Matches[i].Status == Active {
 		b.Matches[i].Status = Pending
+		b.refresh()
 	}
 	s.clearActive(ref)
 }

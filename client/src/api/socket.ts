@@ -122,6 +122,7 @@ function safeStorage() {
 
 function disconnect() {
   clearTimeout(reconnectTimer);
+  clearTimeout(retryTimer);
   if (socket) {
     socket.onclose = null;
     socket.close();
@@ -138,6 +139,7 @@ function open() {
   setStatus('connecting');
 
   ws.onopen = () => {
+    if (socket !== ws) return;
     backoff = 500;
     lastFrameAt = Date.now();
     Object.keys(lastSeq).forEach(k => delete lastSeq[k]);
@@ -146,12 +148,14 @@ function open() {
     flushQueue();
   };
   ws.onmessage = (event) => {
+    if (socket !== ws) return; // a socket we already gave up on
     lastFrameAt = Date.now();
     for (const line of String(event.data).split('\n')) {
       if (line) handleFrame(JSON.parse(line) as ServerFrame);
     }
   };
   ws.onclose = () => {
+    if (socket !== ws) return;
     stopTimers();
     socket = null;
     if (status === 'replaced') return; // don't fight the other device for the seat
@@ -182,7 +186,11 @@ function handleFrame(msg: ServerFrame) {
       break;
     case 'NACK': {
       const p = msg.payload as NackPayload;
-      settle(p.id, { ok: false, reason: p.reason });
+      if (RETRYABLE.has(p.reason) && queue?.pending().some(a => a.id === p.id)) {
+        keepForRetry(p.id, p.reason);
+      } else {
+        settle(p.id, { ok: false, reason: p.reason });
+      }
       break;
     }
     case 'SESSION_REPLACED':
@@ -231,6 +239,18 @@ function settle(id: string, r: ActionResult) {
   waiting.delete(id);
   resultListeners.forEach(cb => cb(type, r));
   publishInfo();
+}
+
+/** NACK reasons that say the server failed, not that the action broke a rule:
+ *  nothing was applied, so a judge's tap stays queued and is sent again. */
+const RETRYABLE = new Set(['server_error']);
+const RETRY_AFTER_MS = 2_000;
+let retryTimer = 0;
+
+function keepForRetry(id: string, reason: string) {
+  resultListeners.forEach(cb => cb(sentTypes.get(id) ?? '', { ok: false, reason }));
+  clearTimeout(retryTimer);
+  retryTimer = window.setTimeout(flushQueue, RETRY_AFTER_MS);
 }
 
 /** Resends everything still unconfirmed, oldest first. It may have been made
