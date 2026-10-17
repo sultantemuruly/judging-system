@@ -315,3 +315,64 @@ func TestLargeActionIsAccepted(t *testing.T) {
 		t.Fatalf("got %q, want an answer (not_found: unknown category), not a dropped socket", r)
 	}
 }
+
+// finishedFight starts a fight with all three judges connected and ends it by AB.
+func finishedFight(t *testing.T, url string) (op *wsConn, j [4]*wsConn) {
+	t.Helper()
+	j = judges(t, url)
+	op = dial(t, url, "role=operator")
+	op.waitState("judges connected", func(s stateUpdate) bool { return s.JudgesSynced })
+	for _, a := range []struct{ id, typ string }{{"s", "START_ROUND"}, {"ab", "STOPPAGE"}} {
+		op.send(a.id, a.typ, map[string]string{"corner": "Red", "method": "AB"})
+		if r := op.result(a.id); r != "" {
+			t.Fatalf("%s: NACK %q", a.typ, r)
+		}
+	}
+	return op, j
+}
+
+func TestSpec_S20_ConfirmWaitsForUnsentTaps(t *testing.T) {
+	url, _, _ := wsServer(t)
+	op, j := finishedFight(t, url)
+
+	j[2].send("", ws.TypeQueueStatus, ws.QueueStatusPayload{Pending: 3})
+	op.waitState("judge 2 pending", func(s stateUpdate) bool { return s.Judges[1].Pending == 3 && !s.JudgesSynced })
+	op.send("c1", "CONFIRM_RESULT", nil)
+	if r := op.result("c1"); r != errJudgesNotSynced.Error() {
+		t.Fatalf("confirm with unsent taps: %q, want %q", r, errJudgesNotSynced)
+	}
+
+	j[2].send("", ws.TypeQueueStatus, ws.QueueStatusPayload{Pending: 0})
+	op.waitState("judge 2 synced", func(s stateUpdate) bool { return s.JudgesSynced })
+	op.send("c2", "CONFIRM_RESULT", nil)
+	if r := op.result("c2"); r != "" {
+		t.Fatalf("confirm once synced: NACK %q", r)
+	}
+}
+
+func TestConfirmAnywayWhenAJudgePhoneIsGone(t *testing.T) {
+	url, _, _ := wsServer(t)
+	op, j := finishedFight(t, url)
+
+	j[3].conn.Close()
+	op.waitState("judge 3 offline", func(s stateUpdate) bool { return !s.Judges[2].Connected })
+	op.send("c1", "CONFIRM_RESULT", nil)
+	if r := op.result("c1"); r != errJudgesNotSynced.Error() {
+		t.Fatalf("confirm with a judge offline: %q, want %q", r, errJudgesNotSynced)
+	}
+	op.send("c2", "CONFIRM_RESULT", map[string]bool{"force": true})
+	if r := op.result("c2"); r != "" {
+		t.Fatalf("forced confirm: NACK %q", r)
+	}
+}
+
+func TestQueueStatusFromViewerIsIgnored(t *testing.T) {
+	url, _, _ := wsServer(t)
+	op, _ := finishedFight(t, url)
+	v := dial(t, url, "role=viewer")
+	v.send("", ws.TypeQueueStatus, ws.QueueStatusPayload{Pending: 5})
+	op.send("c", "CONFIRM_RESULT", nil)
+	if r := op.result("c"); r != "" {
+		t.Fatalf("confirm: NACK %q (a viewer's queue status must not count)", r)
+	}
+}

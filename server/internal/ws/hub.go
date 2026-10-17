@@ -15,6 +15,8 @@ type Handler interface {
 	// SeatsChanged reports which judge seats (index 1–3) have a live device.
 	// It is called in order, from its own goroutine.
 	SeatsChanged(seats [4]bool)
+	// QueueStatus reports how many actions a judge's device still holds unconfirmed.
+	QueueStatus(s Session, pending int)
 }
 
 // Hub keeps the set of connections and the judge seats. Only its run

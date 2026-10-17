@@ -4,7 +4,7 @@
 // (and in localStorage) and resent after a reconnect, so no tap is lost (§9).
 
 import type {
-  AckPayload, ActionFrame, FightView, NackPayload, ServerFrame, Session, TournamentState,
+  AckPayload, ActionFrame, FightView, NackPayload, QueueStatusPayload, ServerFrame, Session, TournamentState,
 } from './protocol';
 import { ActionQueue, type QueuedAction } from './queue';
 import { deviceId, newId } from './ids';
@@ -77,6 +77,7 @@ function setStatus(next: ConnectionStatus) {
 }
 
 function publishInfo() {
+  reportQueue();
   const pending = queue?.size ?? 0;
   if (info.status === status && info.pending === pending) return;
   info = { status, pending };
@@ -143,6 +144,7 @@ function open() {
     backoff = 500;
     lastFrameAt = Date.now();
     Object.keys(lastSeq).forEach(k => delete lastSeq[k]);
+    reportedPending = -1; // a new connection hears the queue size again
     setStatus('open');
     startTimers();
     flushQueue();
@@ -197,6 +199,20 @@ function handleFrame(msg: ServerFrame) {
       setStatus('replaced');
       break;
   }
+}
+
+// ---- queue status ----
+
+let reportedPending = -1;
+
+/** Tells the server how many of this judge's taps are still unconfirmed, so the
+ *  operator can't confirm a result while a tap is on its way (§7). */
+function reportQueue() {
+  if (!queue) return;
+  const pending = queue.size;
+  if (pending === reportedPending) return;
+  const status: QueueStatusPayload = { pending };
+  if (rawSend({ id: '', type: 'QUEUE_STATUS', payload: status })) reportedPending = pending;
 }
 
 // ---- clock sync and liveness ----

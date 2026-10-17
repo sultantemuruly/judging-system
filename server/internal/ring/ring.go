@@ -47,6 +47,9 @@ type Ring struct {
 	fight  match.Fight
 	log    Log
 	seats  [match.JudgeCount + 1]bool
+	// pending is each seat's last reported count of unconfirmed taps; a seat
+	// that drops off keeps its count until its device reports again.
+	pending [match.JudgeCount + 1]int
 }
 
 func New(opts Options) *Ring {
@@ -214,8 +217,40 @@ func (r *Ring) View() match.FightView {
 	v := r.fight.View(r.now())
 	for i := range v.Judges {
 		v.Judges[i].Connected = r.seats[v.Judges[i].Seat]
+		v.Judges[i].Pending = r.pending[v.Judges[i].Seat]
 	}
+	v.JudgesSynced = r.judgesSyncedLocked()
 	return v
+}
+
+// SetPending records how many taps the device on seat still holds unconfirmed.
+func (r *Ring) SetPending(seat, n int) {
+	if seat < 1 || seat > match.JudgeCount || n < 0 {
+		return
+	}
+	r.mu.Lock()
+	changed := r.pending[seat] != n
+	r.pending[seat] = n
+	r.mu.Unlock()
+	if changed {
+		r.opts.OnChange()
+	}
+}
+
+// JudgesSynced reports whether every judge is connected with nothing unsent (§7).
+func (r *Ring) JudgesSynced() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.judgesSyncedLocked()
+}
+
+func (r *Ring) judgesSyncedLocked() bool {
+	for seat := 1; seat <= match.JudgeCount; seat++ {
+		if !r.seats[seat] || r.pending[seat] > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // SetSeats records which judge seats (index 1–3) have a live device.

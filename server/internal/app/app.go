@@ -28,6 +28,7 @@ var (
 	errJudgesNotConnected = errors.New("judges_not_connected")
 	errWrongFight         = errors.New("wrong_fight")
 	errFightInProgress    = errors.New("fight_in_progress")
+	errJudgesNotSynced    = errors.New("judges_not_synced")
 )
 
 // showLiveScores lets the viewer show judges' scores during the fight (§7).
@@ -178,6 +179,10 @@ func (a *App) Snapshot() [][]byte {
 
 func (a *App) SeatsChanged(seats [4]bool) {
 	a.ring.SetSeats(seats)
+}
+
+func (a *App) QueueStatus(s ws.Session, pending int) {
+	a.ring.SetPending(s.Seat, pending)
 }
 
 var _ ws.Handler = (*App)(nil)

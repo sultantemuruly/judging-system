@@ -33,6 +33,8 @@ export interface JudgeView {
   verdict: Corner | '';
   decided: boolean;
   decision_needed: boolean;
+  /** Taps the judge's device holds that the server hasn't confirmed yet. */
+  pending: number;
 }
 
 export interface CornerView {
@@ -94,6 +96,8 @@ export interface FightView {
   medical: MedicalView;
   /** How the operator may stop the fight right now (§5); empty when not allowed. */
   stoppage_methods: Method[];
+  /** All judges connected with nothing unsent: the result can be confirmed (§7). */
+  judges_synced: boolean;
   live_scores: boolean;
 }
 
@@ -118,6 +122,7 @@ export const emptyFight: FightView = {
   actions: [],
   medical: { active: false, started_at: 0, ends_at: 0 },
   stoppage_methods: [],
+  judges_synced: false,
   live_scores: true,
 };
 
@@ -216,6 +221,11 @@ export type Role = 'operator' | 'judge' | 'viewer';
 export interface Session {
   role: Role;
   seat?: number;
+}
+
+/** Judge → server, no id and no answer: how many of its taps are still unconfirmed (§7). */
+export interface QueueStatusPayload {
+  pending: number;
 }
 
 /** Client → server. */

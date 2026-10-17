@@ -52,6 +52,8 @@ type fightPayload struct {
 	Method   match.Method    `json:"method"`
 	TargetID string          `json:"target_id"`
 	FightID  string          `json:"fight_id"`
+	// CONFIRM_RESULT: confirm although a judge is offline or has taps unsent.
+	Force bool `json:"force"`
 	// NEW_FIGHT
 	Rounds       int `json:"rounds"`
 	RoundSeconds int `json:"round_seconds"`
@@ -143,10 +145,15 @@ func (a *App) fightAction(msg ws.Action) error {
 	case "CANCEL_FIGHT":
 		return a.cancelFight()
 	}
-	e, _, err := actionToEvent(msg)
+	e, p, err := actionToEvent(msg)
 	if err != nil {
 		log.Printf("action rejected: %v", err)
 		return errRejected
+	}
+	// Confirming while a judge still holds taps would refuse them (§7, S20);
+	// the operator may override after a warning, for a phone that is gone.
+	if e.Type == match.ResultConfirmed && !p.Force && !a.ring.Fight().Seen(e.ID) && !a.ring.JudgesSynced() {
+		return errJudgesNotSynced
 	}
 	// The fight starts only when all three judges are connected (§1).
 	if e.Type == match.RoundStarted && a.ring.Fight().Phase() == match.NotStarted && !a.ring.AllSeatsConnected() {

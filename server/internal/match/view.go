@@ -17,6 +17,9 @@ type FightView struct {
 	Medical MedicalView           `json:"medical"`
 	// StoppageMethods are the ways the operator may stop the fight right now (§5).
 	StoppageMethods []Method `json:"stoppage_methods"`
+	// JudgesSynced: all judges are connected and have nothing unsent, so the
+	// result can be confirmed without losing a tap (§7). Filled by the ring.
+	JudgesSynced bool `json:"judges_synced"`
 }
 
 // ClockView lets a client draw the countdown from server time:
@@ -46,6 +49,8 @@ type JudgeView struct {
 	Verdict        Corner `json:"verdict"`
 	Decided        bool   `json:"decided"`         // verdict came from the judge's own decision
 	DecisionNeeded bool   `json:"decision_needed"` // the judge must choose RED or BLUE now
+	// Pending is how many taps the judge's device holds that the server hasn't confirmed.
+	Pending int `json:"pending"`
 }
 
 type CornerView struct {

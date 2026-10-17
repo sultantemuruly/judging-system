@@ -102,6 +102,13 @@ func (c *Client) readPump() {
 			c.hub.reply(c, TypeTimeSync, a.Payload)
 			continue
 		}
+		if a.Type == TypeQueueStatus {
+			var p QueueStatusPayload
+			if c.session.Role == RoleJudge && json.Unmarshal(a.Payload, &p) == nil {
+				c.hub.handler.QueueStatus(c.session, p.Pending)
+			}
+			continue
+		}
 		err = c.hub.handler.HandleAction(c.session, a)
 		if a.ID == "" {
 			continue
