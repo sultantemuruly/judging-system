@@ -18,12 +18,12 @@ export interface ActionResult {
   reason?: string;
 }
 
-// Auto-detect the WebSocket URL:
-//  - HTTPS (production): wss:// through the reverse proxy at /ws
-//  - HTTP (local dev):   ws:// directly to the Go server on :8080
-const BASE_URL = window.location.protocol === 'https:'
-  ? `wss://${window.location.host}/ws`
-  : `ws://${window.location.hostname}:8080/ws`;
+// The WebSocket URL:
+//  - built app (nginx, HTTP on the LAN or HTTPS): same origin, /ws through the proxy
+//  - Vite dev server (:5173): straight to the Go server on :8080
+const BASE_URL = import.meta.env.DEV
+  ? `ws://${window.location.hostname}:8080/ws`
+  : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
 
 const PING_EVERY_MS = 3_000;
 /** No frame for this long means the connection is dead even if the browser hasn't noticed. */

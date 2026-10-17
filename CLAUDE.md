@@ -30,9 +30,9 @@ npm run build    # tsc -b && vite build → client/dist
 npm run lint
 npm test         # vitest
 ```
-In dev the client connects to `ws://<host>:8080/ws` directly; on HTTPS it uses `wss://<host>/ws` through nginx (`client/nginx.conf`). The page decides the connection's role: `/judge/N` is judge seat N, `/viewer` a viewer, anything else the operator.
+The Vite dev server connects to `ws://<host>:8080/ws` directly; the built app always uses the same origin, `ws(s)://<host>/ws`, through nginx (`client/nginx.conf`). The page decides the connection's role: `/judge/N` is judge seat N, `/viewer` a viewer, anything else the operator.
 
-Docker (`docker-compose.yml`) is still broken: the builder image is `golang:1.21` while `go.mod` needs 1.25, the client image expects a pre-built `client/dist`, and compose bind-mounts a single `tournament_data.json` file — mount the data directory instead (atomic writes rename files inside it). Fix it before relying on it.
+Docker (`docker-compose.yml`): `docker compose up --build -d`, then open `http://<this machine>/` on every device (`HTTP_PORT` changes the port). nginx serves the client and proxies `/ws` to the server, whose port isn't published. Data lives in the named volume `judging-data` (mounted at `/app/data`), so it survives `docker compose down` and rebuilds; `down -v` deletes it. To import an old `tournament_data.json` into an empty volume: `docker compose create`, `docker compose cp server/tournament_data.json server:/app/data/tournament.json`, `docker compose run --rm --no-deps -u root --entrypoint chown server appuser /app/data/tournament.json` (the copy keeps your host uid, which the server's `appuser` can't read), then `docker compose up -d`.
 
 ## Architecture
 

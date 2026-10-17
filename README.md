@@ -124,10 +124,13 @@ go build -o judging-server.exe ./cmd/server
 netstat -ano | findstr :8080
 taskkill /PID <PID> /F
 ```
-# 1. Сначала собери клиент локально
-cd client
-npm run build
+## Docker
 
-# 2. Запусти всё через docker-compose
-cd ..
-docker-compose up --build
+```bash
+docker compose up --build -d
+```
+
+Open `http://<this machine>/` on every device (judges: `/judge/1`, `/judge/2`, `/judge/3`; viewer: `/viewer`).
+nginx serves the client and proxies the WebSocket (`/ws`) to the server; set `HTTP_PORT` to use another port.
+Fight logs and `tournament.json` are kept in the named volume `judging-data`, so they survive
+`docker compose down` and rebuilds (`docker compose down -v` deletes them). See `CLAUDE.md` for importing an old `tournament_data.json`.
