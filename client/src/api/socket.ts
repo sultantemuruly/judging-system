@@ -226,10 +226,16 @@ function startTimers() {
   [0, 300, 600, 900, 1200].forEach(ms => window.setTimeout(ping, ms));
   pingTimer = window.setInterval(ping, PING_EVERY_MS);
   watchdogTimer = window.setInterval(() => {
-    if (status === 'open' && Date.now() - lastFrameAt > SILENCE_LIMIT_MS) {
-      socket?.close(); // half-dead connection: reconnect now
-    }
+    if (status === 'open' && Date.now() - lastFrameAt > SILENCE_LIMIT_MS) reconnectNow();
   }, 1_000);
+}
+
+/** A half-dead connection: on a phone the browser can take a long time to
+ *  report it closed, so drop it and connect again right away. */
+function reconnectNow() {
+  disconnect();
+  setStatus('closed');
+  open();
 }
 
 function stopTimers() {

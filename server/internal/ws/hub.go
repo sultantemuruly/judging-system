@@ -3,6 +3,7 @@ package ws
 import (
 	"encoding/json"
 	"log"
+	"sync"
 )
 
 // Handler is what the hub needs from the application.
@@ -13,7 +14,8 @@ type Handler interface {
 	// Snapshot is the full current state, sent to every new connection.
 	Snapshot() [][]byte
 	// SeatsChanged reports which judge seats (index 1–3) have a live device.
-	// It is called in order, from its own goroutine.
+	// It is called from its own goroutine, one call at a time, always ending
+	// with the latest seats; changes that happen meanwhile are merged.
 	SeatsChanged(seats [4]bool)
 	// QueueStatus reports how many actions a judge's device still holds unconfirmed.
 	QueueStatus(s Session, pending int)
@@ -30,7 +32,13 @@ type Hub struct {
 	direct     chan directMessage
 	register   chan *Client
 	unregister chan *Client
-	seatEvents chan [4]bool
+
+	// The latest seats, handed to SeatsChanged without ever blocking the run
+	// loop: the handler broadcasts through the hub, so a full queue of seat
+	// events would deadlock the two.
+	seatMu     sync.Mutex
+	seatLatest [4]bool
+	seatSignal chan struct{}
 }
 
 type directMessage struct {
@@ -47,14 +55,17 @@ func NewHub(h Handler, nowMs func() int64) *Hub {
 		direct:     make(chan directMessage, 256),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
-		seatEvents: make(chan [4]bool, 64),
+		seatSignal: make(chan struct{}, 1),
 	}
 }
 
 // Run serves the hub until the process exits.
 func (h *Hub) Run() {
 	go func() {
-		for seats := range h.seatEvents {
+		for range h.seatSignal {
+			h.seatMu.Lock()
+			seats := h.seatLatest
+			h.seatMu.Unlock()
 			h.handler.SeatsChanged(seats)
 		}
 	}()
@@ -133,7 +144,13 @@ func (h *Hub) seatsChanged() {
 	for i := 1; i < len(h.seats); i++ {
 		seats[i] = h.seats[i] != nil
 	}
-	h.seatEvents <- seats
+	h.seatMu.Lock()
+	h.seatLatest = seats
+	h.seatMu.Unlock()
+	select {
+	case h.seatSignal <- struct{}{}:
+	default: // a report is already due; it will read the latest seats
+	}
 }
 
 func (h *Hub) frame(typ string, payload any) []byte {

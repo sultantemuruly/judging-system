@@ -375,3 +375,31 @@ func TestCategoryDisciplineIsLowKick(t *testing.T) {
 		t.Fatalf("edit to k-1: got %v, want %v", err, ErrInvalid)
 	}
 }
+
+func TestSwapRefusesByeMatches(t *testing.T) {
+	s := newCategory(t, plain(3)...)
+	if err := s.GenerateBracket("c", nil, rand.New(rand.NewSource(1))); err != nil {
+		t.Fatal(err)
+	}
+	b := s.Brackets["c"]
+	var fight, bye *Match
+	for i := range b.Matches {
+		m := &b.Matches[i]
+		if m.Round == 1 && m.Status == Pending {
+			fight = m
+		}
+		if m.Round == 1 && m.Status == Bye {
+			bye = m
+		}
+	}
+	if fight == nil || bye == nil {
+		t.Fatalf("want one round-1 fight and one bye, got %+v", b.Matches)
+	}
+	if err := s.Swap("c", fight.ID, "red", bye.ID, "red"); !errors.Is(err, ErrMatchDecided) {
+		t.Fatalf("swap into a bye: %v, want %v", err, ErrMatchDecided)
+	}
+	// Within one pending fight the corners can still be swapped.
+	if err := s.Swap("c", fight.ID, "red", fight.ID, "blue"); err != nil {
+		t.Fatalf("swap corners of a pending fight: %v", err)
+	}
+}

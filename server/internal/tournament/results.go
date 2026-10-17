@@ -160,7 +160,8 @@ func (b *Bracket) replaceAdvanced(round, position int, oldID, newID, newName str
 	return nil
 }
 
-// Swap exchanges two fighters between round-1 slots before any fight is decided.
+// Swap exchanges two fighters between round-1 matches that are still to be
+// fought, before any fight is decided.
 func (s *State) Swap(categoryID, matchID1, slot1, matchID2, slot2 string) error {
 	b := s.Brackets[categoryID]
 	if b == nil {
@@ -175,8 +176,12 @@ func (s *State) Swap(categoryID, matchID1, slot1, matchID2, slot2 string) error 
 		return ErrNotFound
 	}
 	m1, m2 := &b.Matches[i1], &b.Matches[i2]
-	if m1.Status == Active || m2.Status == Active {
-		return ErrMatchDecided
+	// Only fighters still waiting for a round-1 fight: a bye has already
+	// carried its fighter into round 2, and swapping it would duplicate one.
+	for _, m := range []*Match{m1, m2} {
+		if m.Round != 1 || m.Status != Pending {
+			return ErrMatchDecided
+		}
 	}
 	id1, name1 := slot(m1, slot1)
 	id2, name2 := slot(m2, slot2)

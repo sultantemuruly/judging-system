@@ -74,6 +74,23 @@ describe('socket', () => {
     expect(first.queueStatuses().at(-1)).toBe(1);
   });
 
+  it('replaces a silent connection at once, without waiting for the browser to close it', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'judge', seat: 3 });
+    const first = FakeSocket.instances[0];
+    first.open();
+
+    vi.advanceTimersByTime(9_000); // no frame from the server for 9 s
+    expect(first.closed).toBe(true);
+    expect(FakeSocket.instances).toHaveLength(2);
+
+    // A late frame on the old socket is ignored; the new one takes over.
+    socket.sendAction('REGISTER_HIT', { corner: 'Red' });
+    const second = FakeSocket.instances[1];
+    second.open();
+    expect(second.sent.some(f => f.type === 'REGISTER_HIT' && f.offline)).toBe(true);
+  });
+
   it('an operator never sends a queue status', async () => {
     const socket = await loadSocket();
     socket.connect({ role: 'operator' });
