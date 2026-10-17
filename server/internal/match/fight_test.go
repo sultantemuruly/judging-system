@@ -2,6 +2,7 @@ package match
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -10,7 +11,9 @@ func TestHitsOnlyWhileClockRuns(t *testing.T) {
 	tap := Event{Type: Hit, Actor: judge(1), Corner: Red}
 	s.reject(tap, ErrClockNotRunning) // before the first round
 	s.startRound()
+	s.advance(1000)
 	s.must(Event{Type: ClockPaused})
+	s.advance(1000)
 	s.reject(tap, ErrClockNotRunning)
 	s.must(Event{Type: ClockResumed})
 	s.must(tap)
@@ -179,4 +182,79 @@ func TestMedicalTimeoutStopsTheClock(t *testing.T) {
 	if v := s.view(); v.Medical.Active || v.Clock.ElapsedMs != 10_000 {
 		t.Fatalf("after timeout: %+v %+v, want round time unchanged by the timeout", v.Medical, v.Clock)
 	}
+}
+
+func TestTapWithImplausiblePhoneTimeUsesReceiptTime(t *testing.T) {
+	s := newScript(t, FightConfig{})
+	s.startRound()
+	s.advance(30_000)
+	s.endRound()
+	s.advance(1000)
+	// A live tap claiming to be made 20 s ago: the phone clock is wrong.
+	s.reject(Event{Type: Hit, Actor: judge(1), Corner: Red, ClientTime: s.now - 20_000}, ErrClockNotRunning)
+	// A tap claiming a time after it arrived is judged by its arrival.
+	s.reject(Event{Type: Hit, Actor: judge(1), Corner: Red, ClientTime: s.now + 60_000}, ErrClockNotRunning)
+}
+
+func TestNoTapsAfterStoppage(t *testing.T) {
+	s := newScript(t, FightConfig{})
+	s.startRound()
+	s.advance(5_000)
+	madeAt := s.now
+	s.advance(1000)
+	s.must(Event{Type: Stoppage, Corner: Red, Method: KO})
+	s.advance(3000)
+	s.reject(Event{Type: Hit, Actor: judge(1), Corner: Blue, Offline: true, ClientTime: madeAt}, ErrFightStopped)
+}
+
+func TestQueuedTapJustAfterGongCounts(t *testing.T) {
+	s := newScript(t, FightConfig{})
+	s.startRound()
+	s.advance(30_000)
+	s.endRound()
+	gong := s.now
+	s.advance(20_000)
+	s.must(Event{Type: Hit, Actor: judge(1), Corner: Red, Offline: true, ClientTime: gong + 300})
+	s.reject(Event{Type: Hit, Actor: judge(1), Corner: Red, Offline: true, ClientTime: gong + 600}, ErrClockNotRunning)
+	s.wantTotal(1, Score{1, 0})
+}
+
+func TestDQOrABAfterFinalGong(t *testing.T) {
+	for _, m := range []Method{DQ, AB} {
+		s := newScript(t, FightConfig{Rounds: 1})
+		s.startRound()
+		s.hits(1, 3, 1)
+		s.endRound()
+		s.must(Event{Type: Stoppage, Corner: Blue, Method: m})
+		s.wantResult(Blue, m, "")
+	}
+	s := newScript(t, FightConfig{Rounds: 1})
+	s.startRound()
+	s.endRound()
+	s.reject(Event{Type: Stoppage, Corner: Blue, Method: KO}, ErrClockState)
+	s.reject(Event{Type: Stoppage, Corner: Blue, Method: RSC}, ErrClockState)
+}
+
+func TestViewListsAllowedStoppages(t *testing.T) {
+	s := newScript(t, FightConfig{Rounds: 1})
+	want := func(ms ...Method) {
+		t.Helper()
+		if got := s.view().StoppageMethods; !reflect.DeepEqual(got, append([]Method{}, ms...)) {
+			t.Fatalf("stoppage methods = %v, want %v", got, ms)
+		}
+		for _, m := range []Method{KO, RSC, DQ, AB} {
+			allowed := slices.Contains(ms, m)
+			_, err := Apply(s.f, Event{ID: "probe", Type: Stoppage, Actor: op(), Corner: Red, Method: m, At: s.now})
+			if (err == nil) != allowed {
+				t.Fatalf("%s: view says allowed=%v, Apply says %v", m, allowed, err)
+			}
+		}
+	}
+	want()
+	s.startRound()
+	want(KO, RSC, DQ, AB)
+	s.endRound()
+	want(DQ, AB)
+	s.must(Event{Type: Stoppage, Corner: Red, Method: AB})
+	want()
 }

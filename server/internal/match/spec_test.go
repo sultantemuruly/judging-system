@@ -253,25 +253,51 @@ func TestSpec_S13_UndoneWarningIsForgotten(t *testing.T) {
 	}
 }
 
-func TestSpec_S16_GongGrace(t *testing.T) {
+func TestSpec_S16_TapJudgedByWhenItWasMade(t *testing.T) {
 	cases := []struct {
-		name  string
-		delay int64
-		want  error
+		name       string
+		madeAfter  int64 // device time of the tap, relative to the gong
+		arrivedAft int64 // when the server receives it, relative to the gong
+		want       error
 	}{
-		{"0.3s after gong counts", 300, nil},
-		{"1s after gong is refused", 1000, ErrClockNotRunning},
+		{"made before the gong, delayed 1s by Wi-Fi: counts", -400, 1000, nil},
+		{"made 1s after the gong: refused", 1000, 1100, ErrClockNotRunning},
+		{"made 0.3s after the gong: within the grace", 300, 350, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newScript(t, FightConfig{})
 			s.startRound()
+			s.advance(30_000)
 			s.endRound()
-			s.advance(tc.delay)
-			if err := s.try(Event{Type: Hit, Actor: judge(2), Corner: Blue}); err != tc.want {
+			gong := s.now
+			s.advance(tc.arrivedAft)
+			err := s.try(Event{Type: Hit, Actor: judge(2), Corner: Blue, ClientTime: gong + tc.madeAfter})
+			if err != tc.want {
 				t.Fatalf("got %v, want %v", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestSpec_S19_QueuedUndoRemovesTheTapItMeant(t *testing.T) {
+	s := newScript(t, FightConfig{})
+	s.startRound()
+	s.advance(10_000)
+	tappedAt := s.now // judge 1 is offline: tap Red, then Undo, both queued
+	s.advance(20_000)
+	s.endRound()
+	s.advance(60_000)
+	s.startRound()
+	s.advance(5_000)
+	s.hits(1, 0, 1) // online again in round 2: a Blue tap
+
+	s.must(Event{Type: Hit, Actor: judge(1), Corner: Red, Offline: true, ClientTime: tappedAt})
+	s.must(Event{Type: HitUndone, Actor: judge(1), Offline: true, ClientTime: tappedAt + 500})
+
+	j := s.view().Judges[0]
+	if j.Rounds[0] != (Score{}) || j.Rounds[1] != (Score{0, 1}) {
+		t.Fatalf("judge 1 rounds = %+v, want round 1 empty and round 2 Blue 1", j.Rounds)
 	}
 }
 

@@ -52,7 +52,7 @@ export default function StoppageDialog({ view, initial, onClose }: Props) {
         </div>
         <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Method</div>
         <div className="grid grid-cols-2 gap-2 mb-6">
-          {methods.map(m => (
+          {methods.filter(m => view.stoppage_methods.includes(m.method)).map(m => (
             <button
               key={m.method}
               onClick={() => { setMethod(m.method); setConfirmDQ(false); }}

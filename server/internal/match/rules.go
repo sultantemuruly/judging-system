@@ -19,6 +19,10 @@ const (
 	JudgeUndoWindowMs = 10_000
 	// GongGraceMs — an online tap counts if the server receives it ≤ 0.5 s after the gong (§3).
 	GongGraceMs = 500
+	// TapClockSkewMs — a live tap is judged by its device time only if that time
+	// is at most 5 s before the server received it (and not after); otherwise the
+	// phone's clock is wrong and the receipt time is used (§3).
+	TapClockSkewMs = 5_000
 
 	// SecondsOutMs — "Seconds out" is signalled 10 s before the rest period ends (§2).
 	SecondsOutMs = 10_000

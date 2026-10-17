@@ -220,24 +220,27 @@ func TestSecondTabSameDeviceReplacesFirst(t *testing.T) {
 	}
 }
 
-func TestSpec_S16_GongGraceOverWebSocket(t *testing.T) {
+func TestSpec_S16_TapTimeOverWebSocket(t *testing.T) {
 	url, _, clk := wsServer(t)
 	j := judges(t, url)
 	op := dial(t, url, "role=operator")
 	op.send("s", "START_ROUND", nil)
 	op.result("s")
+	clk.Advance(30 * time.Second)
 	op.send("e", "END_ROUND", nil)
 	op.result("e")
+	gong := clock.Ms(clk.Now())
+	madeAt := func(ms int64) func(*ws.Action) { return func(a *ws.Action) { a.ClientTime = ms } }
 
-	clk.Advance(300 * time.Millisecond)
-	j[1].send("late-300", "REGISTER_HIT", map[string]string{"corner": "Red"})
-	if r := j[1].result("late-300"); r != "" {
-		t.Fatalf("0.3 s after gong: NACK %q, want ACK", r)
+	// Made 0.4 s before the gong, delivered 1 s after it: Wi-Fi delay doesn't cost the tap.
+	clk.Advance(time.Second)
+	j[1].send("before-gong", "REGISTER_HIT", map[string]string{"corner": "Red"}, madeAt(gong-400))
+	if r := j[1].result("before-gong"); r != "" {
+		t.Fatalf("tap made before the gong: NACK %q, want ACK", r)
 	}
-	clk.Advance(700 * time.Millisecond)
-	j[1].send("late-1000", "REGISTER_HIT", map[string]string{"corner": "Red"})
-	if r := j[1].result("late-1000"); r != match.ErrClockNotRunning.Error() {
-		t.Fatalf("1 s after gong: %q, want clock_not_running", r)
+	j[1].send("after-gong", "REGISTER_HIT", map[string]string{"corner": "Red"}, madeAt(gong+1000))
+	if r := j[1].result("after-gong"); r != match.ErrClockNotRunning.Error() {
+		t.Fatalf("tap made 1 s after the gong: %q, want clock_not_running", r)
 	}
 }
 

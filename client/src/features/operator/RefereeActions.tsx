@@ -66,11 +66,11 @@ export default function RefereeActions({ view, onFourthWarning, onStopFight }: P
       </div>
       <div className="mt-3 flex items-center gap-3">
         <button
-          disabled={over || !started}
+          disabled={view.stoppage_methods.length === 0}
           onClick={onStopFight}
           className="h-11 px-5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 rounded-lg text-white font-bold text-sm flex items-center gap-2 cursor-pointer"
         >
-          <OctagonX size={16} /> Stop the fight (KO, RSC, DQ, AB)…
+          <OctagonX size={16} /> Stop the fight ({(view.stoppage_methods.length ? view.stoppage_methods : ['KO', 'RSC', 'DQ', 'AB']).join(', ')})…
         </button>
         {alertCorner && !over && (
           <div className="text-sm text-yellow-400 font-bold animate-pulse">

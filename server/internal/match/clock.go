@@ -150,9 +150,10 @@ func (f Fight) CurrentRound() int { return f.round }
 // Phase is where the clock is.
 func (f Fight) Phase() Phase { return f.phase }
 
-// roundRunningAt returns the round whose running time contains t (an open
-// interval counts up to now), or 0.
-func (f Fight) roundRunningAt(t, now int64) int {
+// roundAcceptingAt returns the round in which a tap made at t counts: its
+// running time contains t (an open interval counts up to now), or t is at most
+// GongGraceMs after its gong (§3). 0 if none.
+func (f Fight) roundAcceptingAt(t, now int64) int {
 	for i, r := range f.rounds {
 		for _, iv := range r.Intervals {
 			end := iv.End
@@ -162,6 +163,23 @@ func (f Fight) roundRunningAt(t, now int64) int {
 			if t >= iv.Start && t <= end {
 				return i + 1
 			}
+		}
+		if r.EndedAt > 0 && t > r.EndedAt && t <= r.EndedAt+GongGraceMs {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// roundUndoableAt returns the round in which a judge's undo made at t applies:
+// from the round's start until JudgeUndoWindowMs after its gong (§3). 0 if none.
+func (f Fight) roundUndoableAt(t int64) int {
+	for i, r := range f.rounds {
+		if t < r.Intervals[0].Start {
+			continue
+		}
+		if r.EndedAt == 0 || t <= r.EndedAt+JudgeUndoWindowMs {
+			return i + 1
 		}
 	}
 	return 0

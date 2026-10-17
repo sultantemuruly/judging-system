@@ -163,49 +163,55 @@ func (f *Fight) hit(e *Event) error {
 	if !e.Corner.Valid() {
 		return ErrInvalidCorner
 	}
-	// Queued taps are judged by when they were made on the device (§3).
-	if e.Offline && e.ClientTime > 0 {
-		r := f.roundRunningAt(e.ClientTime, e.At)
-		if r == 0 {
-			return ErrClockNotRunning
-		}
-		e.Round = r
-		return nil
+	if _, stopped := f.stopped(); stopped {
+		return ErrFightStopped
 	}
-	switch f.phase {
-	case Running:
-		e.Round = f.round
-	case Rest, Ended:
-		if e.At-f.currentRound().EndedAt > GongGraceMs {
-			return ErrClockNotRunning
-		}
-		e.Round = f.round
-	default:
+	// A tap is judged by when it was made, so Wi-Fi delay never costs it (§3).
+	r := f.roundAcceptingAt(tapTime(e), e.At)
+	if r == 0 {
 		return ErrClockNotRunning
 	}
+	e.Round = r
 	return nil
 }
 
-// undoHit removes the judge's last hit of the current (or just-ended) round.
+// tapTime is when a judge's action was made, in server time (§3). A queued
+// action is judged by its device time. A live one is too, unless that time is
+// implausible for a live send — then the phone's clock is wrong and the time
+// the server received it is used. A time after receipt is never possible.
+func tapTime(e *Event) int64 {
+	switch {
+	case e.ClientTime <= 0 || e.ClientTime > e.At:
+		return e.At
+	case e.Offline:
+		return e.ClientTime
+	case e.At-e.ClientTime > TapClockSkewMs:
+		return e.At
+	}
+	return e.ClientTime
+}
+
+// undoHit removes the judge's last hit made before the undo, in the round
+// where the undo was pressed (§3, S19). A queued undo is judged by when it
+// was made, like a tap, so it removes the tap the judge meant.
 func (f *Fight) undoHit(e *Event) error {
 	seat, err := judgeSeat(e)
 	if err != nil {
 		return err
 	}
-	switch f.phase {
-	case Running, Paused:
-	case Rest, Ended:
-		if e.At-f.currentRound().EndedAt > JudgeUndoWindowMs {
+	at := tapTime(e)
+	r := f.roundUndoableAt(at)
+	if r == 0 {
+		if f.round > 0 && at >= f.rounds[0].Intervals[0].Start {
 			return ErrUndoWindowClosed
 		}
-	default:
 		return ErrNothingToUndo
 	}
 	for i := len(f.Events) - 1; i >= 0; i-- {
 		h := f.Events[i]
-		if h.Type == Hit && h.Actor.Seat == seat && h.Round == f.round && !f.undone[h.ID] {
+		if h.Type == Hit && h.Actor.Seat == seat && h.Round == r && !f.undone[h.ID] && tapTime(&h) <= at {
 			e.TargetID = h.ID
-			e.Round = f.round
+			e.Round = r
 			e.Corner = h.Corner
 			f.undone[h.ID] = true
 			return nil
@@ -271,12 +277,32 @@ func (f *Fight) stoppage(e *Event) error {
 	}
 	switch f.phase {
 	case Running, Paused, Rest:
+	case Ended:
+		// After the final gong a fighter can still be disqualified or give up;
+		// nobody can be knocked out any more (§5).
+		if e.Method != DQ && e.Method != AB {
+			return ErrClockState
+		}
 	default:
 		return ErrClockState
 	}
 	e.Round = f.round
 	f.stopClock(e.At)
 	return nil
+}
+
+// stoppageMethods lists what stoppage() would accept now.
+func (f Fight) stoppageMethods() []Method {
+	if _, stopped := f.stopped(); stopped || f.confirmed {
+		return []Method{}
+	}
+	switch f.phase {
+	case Running, Paused, Rest:
+		return []Method{KO, RSC, DQ, AB}
+	case Ended:
+		return []Method{DQ, AB}
+	}
+	return []Method{}
 }
 
 func (f *Fight) undoRefereeAction(e *Event) error {

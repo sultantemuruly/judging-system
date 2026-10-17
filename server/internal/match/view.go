@@ -15,6 +15,8 @@ type FightView struct {
 	Result  Result                `json:"result"`
 	Actions []ActionView          `json:"actions"`
 	Medical MedicalView           `json:"medical"`
+	// StoppageMethods are the ways the operator may stop the fight right now (§5).
+	StoppageMethods []Method `json:"stoppage_methods"`
 }
 
 // ClockView lets a client draw the countdown from server time:
@@ -93,6 +95,8 @@ func (f Fight) View(now int64) FightView {
 		Clock:    f.clockView(),
 		Result:   res,
 		Actions:  []ActionView{},
+
+		StoppageMethods: f.stoppageMethods(),
 	}
 	if v.Clock.Phase == "" {
 		v.Clock.Phase = NotStarted

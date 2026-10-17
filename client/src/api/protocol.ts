@@ -92,6 +92,8 @@ export interface FightView {
   result: FightResult;
   actions: ActionView[];
   medical: MedicalView;
+  /** How the operator may stop the fight right now (§5); empty when not allowed. */
+  stoppage_methods: Method[];
   live_scores: boolean;
 }
 
@@ -115,6 +117,7 @@ export const emptyFight: FightView = {
   result: { winner: '', method: '', final: false, confirmed: false },
   actions: [],
   medical: { active: false, started_at: 0, ends_at: 0 },
+  stoppage_methods: [],
   live_scores: true,
 };
 
