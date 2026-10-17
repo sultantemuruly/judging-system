@@ -44,8 +44,8 @@ type Category struct {
 	Fighters   []Fighter `json:"fighters"`
 }
 
-// Disciplines the club runs: Low-kick and K-1. No full-contact, so no kick counter.
-var Disciplines = map[string]bool{"low-kick": true, "k-1": true}
+// Disciplines the club runs: Low-kick only (no K-1, no full-contact).
+var Disciplines = map[string]bool{"low-kick": true}
 
 // Label is the category's display name for scoreboards.
 func (c Category) Label() string {

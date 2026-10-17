@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Real-time judging system for amateur kickboxing tournaments (K-1 / Low-kick, WAKO-style). Three side judges tap RED / BLUE on their phones for every clean hit; an operator laptop runs the clock and enters referee decisions (warnings, knockdowns, stoppages); a viewer screen shows the scoreboard; an admin manages categories, fighters and single-elimination brackets. Status: pilot. The club's #1 requirement is that judges' phones stay connected and no tap is lost.
+Real-time judging system for amateur kickboxing tournaments (Low-kick only, WAKO-style). Three side judges tap RED / BLUE on their phones for every clean hit; an operator laptop runs the clock and enters referee decisions (warnings, knockdowns, stoppages); a viewer screen shows the scoreboard; an admin manages categories, fighters and single-elimination brackets. Status: pilot. The club's #1 requirement is that judges' phones stay connected and no tap is lost.
 
 **`TECHNICAL_SPECIFICATION.md` (Russian) is the source of truth for all rules** — scoring, warnings ladder, knockdowns, tie-breaks, bracket behaviour, reliability requirements. Its section 10 lists worked scenarios with expected results; each must exist as an automated test. When code and spec disagree, the spec wins; if the spec is silent or ambiguous, ask rather than invent a rule.
 

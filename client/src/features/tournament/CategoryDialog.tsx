@@ -11,7 +11,7 @@ export default function CategoryDialog({ category, onClose }: { category?: Weigh
   const [name, setName] = useState(category?.name ?? '');
   const [sex, setSex] = useState(category?.sex || 'male');
   const [gender, setGender] = useState(category?.gender || 'Seniors');
-  const [discipline, setDiscipline] = useState(category?.discipline || 'k-1');
+  const [discipline, setDiscipline] = useState(category?.discipline || 'low-kick');
   const [format, setFormat] = useState<FightFormat>(category?.format ?? defaultFormat);
   const set = (k: keyof FightFormat) => (e: { target: { value: string } }) => setFormat(f => ({ ...f, [k]: Number(e.target.value) }));
 
@@ -44,7 +44,6 @@ export default function CategoryDialog({ category, onClose }: { category?: Weigh
           </label>
           <label className={`${label} col-span-2`}>Discipline
             <select value={discipline} onChange={e => setDiscipline(e.target.value)} className={field}>
-              <option value="k-1">K-1</option>
               <option value="low-kick">Low-kick</option>
             </select>
           </label>

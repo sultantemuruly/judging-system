@@ -360,18 +360,18 @@ func TestCorrectionFollowsWalkoverCascade(t *testing.T) {
 	}
 }
 
-func TestCategoryDisciplineIsLowKickOrK1(t *testing.T) {
+func TestCategoryDisciplineIsLowKick(t *testing.T) {
 	s := &State{}
 	s.Normalize()
-	if err := s.AddCategory(Category{ID: "fc", Name: "-60kg", Discipline: "full-contact"}); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("full-contact category: got %v, want %v", err, ErrInvalid)
-	}
-	for _, d := range []string{"low-kick", "k-1"} {
-		if err := s.AddCategory(Category{ID: d, Name: "-60kg", Discipline: d}); err != nil {
-			t.Fatalf("%s: %v", d, err)
+	for _, d := range []string{"full-contact", "k-1"} {
+		if err := s.AddCategory(Category{ID: d, Name: "-60kg", Discipline: d}); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("%s category: got %v, want %v", d, err, ErrInvalid)
 		}
 	}
-	if err := s.EditCategory(Category{ID: "k-1", Name: "-60kg", Discipline: "full-contact"}); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("edit to full-contact: got %v, want %v", err, ErrInvalid)
+	if err := s.AddCategory(Category{ID: "lk", Name: "-60kg", Discipline: "low-kick"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EditCategory(Category{ID: "lk", Name: "-60kg", Discipline: "k-1"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("edit to k-1: got %v, want %v", err, ErrInvalid)
 	}
 }
