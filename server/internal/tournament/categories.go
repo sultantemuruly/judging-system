@@ -46,7 +46,7 @@ func (s *State) SetInfo(name, date string) {
 // AddCategory adds c; the caller chooses its ID.
 func (s *State) AddCategory(c Category) error {
 	c.Name = strings.TrimSpace(c.Name)
-	if c.ID == "" || c.Name == "" {
+	if c.ID == "" || c.Name == "" || !validDiscipline(c.Discipline) {
 		return ErrInvalid
 	}
 	c.Format = c.Format.Normalized()
@@ -61,10 +61,16 @@ func (s *State) EditCategory(c Category) error {
 	if err != nil {
 		return err
 	}
+	if !validDiscipline(c.Discipline) {
+		return ErrInvalid
+	}
 	cur.Name, cur.Gender, cur.Sex, cur.Discipline = c.Name, c.Gender, c.Sex, c.Discipline
 	cur.Format = c.Format.Normalized()
 	return nil
 }
+
+// validDiscipline accepts the club's disciplines; empty means not set.
+func validDiscipline(d string) bool { return d == "" || Disciplines[d] }
 
 // DeleteCategory removes a category and its bracket. Refused while one of its
 // matches is on the ring.

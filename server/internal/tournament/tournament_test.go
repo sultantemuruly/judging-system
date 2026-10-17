@@ -359,3 +359,19 @@ func TestCorrectionFollowsWalkoverCascade(t *testing.T) {
 		t.Fatalf("final = %+v, want f2 after the correction", final)
 	}
 }
+
+func TestCategoryDisciplineIsLowKickOrK1(t *testing.T) {
+	s := &State{}
+	s.Normalize()
+	if err := s.AddCategory(Category{ID: "fc", Name: "-60kg", Discipline: "full-contact"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("full-contact category: got %v, want %v", err, ErrInvalid)
+	}
+	for _, d := range []string{"low-kick", "k-1"} {
+		if err := s.AddCategory(Category{ID: d, Name: "-60kg", Discipline: d}); err != nil {
+			t.Fatalf("%s: %v", d, err)
+		}
+	}
+	if err := s.EditCategory(Category{ID: "k-1", Name: "-60kg", Discipline: "full-contact"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("edit to full-contact: got %v, want %v", err, ErrInvalid)
+	}
+}

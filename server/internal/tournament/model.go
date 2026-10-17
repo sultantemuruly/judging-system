@@ -37,12 +37,15 @@ type Fighter struct {
 type Category struct {
 	ID         string    `json:"id"`
 	Name       string    `json:"name"`
-	Gender     string    `json:"gender"`     // age group, e.g. "Seniors", "2012-2013"
+	Gender     string    `json:"gender"`     // age group; only "Seniors" (17+) at this tournament
 	Sex        string    `json:"sex"`        // "male" or "female"
-	Discipline string    `json:"discipline"` // "low-kick", "full-contact", "k-1"
+	Discipline string    `json:"discipline"` // one of Disciplines
 	Format     Format    `json:"format"`
 	Fighters   []Fighter `json:"fighters"`
 }
+
+// Disciplines the club runs: Low-kick and K-1. No full-contact, so no kick counter.
+var Disciplines = map[string]bool{"low-kick": true, "k-1": true}
 
 // Label is the category's display name for scoreboards.
 func (c Category) Label() string {

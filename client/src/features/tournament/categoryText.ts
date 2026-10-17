@@ -1,7 +1,7 @@
 import type { WeightCategory } from '../../api/protocol';
 
 const sexes: Record<string, string> = { male: 'Men', female: 'Women' };
-const disciplines: Record<string, string> = { 'k-1': 'K-1', 'low-kick': 'Low-kick', 'full-contact': 'Full contact' };
+const disciplines: Record<string, string> = { 'k-1': 'K-1', 'low-kick': 'Low-kick' };
 
 /** "Men · Seniors · K-1 · 6 fighters" */
 export function categoryLabel(c: WeightCategory): string {

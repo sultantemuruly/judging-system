@@ -39,16 +39,13 @@ export default function CategoryDialog({ category, onClose }: { category?: Weigh
           </label>
           <label className={label}>Age group
             <select value={gender} onChange={e => setGender(e.target.value)} className={field}>
-              <option value="Seniors">Seniors</option>
-              <option value="2012-2013">2012-2013</option>
-              <option value="2010-2011">2010-2011</option>
+              <option value="Seniors">Seniors (17+)</option>
             </select>
           </label>
           <label className={`${label} col-span-2`}>Discipline
             <select value={discipline} onChange={e => setDiscipline(e.target.value)} className={field}>
               <option value="k-1">K-1</option>
               <option value="low-kick">Low-kick</option>
-              <option value="full-contact">Full contact</option>
             </select>
           </label>
         </div>

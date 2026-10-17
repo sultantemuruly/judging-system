@@ -30,10 +30,6 @@ function getMatchPriority(row: Omit<ScheduleRow, 'num'>): number {
   const isSeniors = row.categoryGender === 'Seniors';
   const isMale = row.categorySex === 'male';
   const isFemale = row.categorySex === 'female';
-  const is2012 = row.categoryGender === '2012-2013';
-  const is2010 = row.categoryGender === '2010-2011';
-  const isFC = row.categoryDiscipline === 'full-contact';
-  const isLK = row.categoryDiscipline === 'low-kick';
   const isSF = row.stage === 'Semi-Final';
   const isQF = row.stage === 'Quarter-Final';
   const isFinal = row.stage === 'Final';
@@ -52,14 +48,11 @@ function getMatchPriority(row: Omit<ScheduleRow, 'num'>): number {
   if (isFinal) return 40;
 
   // 5. Remaining matches
-  if (isSF && is2012 && isFC) return 110;
   if (isQF && isSeniors) return 120;
 
   const isGroup3Weight = name.includes('57') || name.includes('67') || name.includes('71') || name.includes('91+');
   if (isSF && isSeniors && isGroup3Weight) return 130;
 
-  if (isSF && is2010 && isFC) return 140;
-  if (isSF && is2010 && isLK) return 150;
   if (isSF && isSeniors) return 160;
 
   if (isQF) return 170;
