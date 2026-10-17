@@ -2,11 +2,14 @@ package app
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"judging-server/internal/clock"
 	"judging-server/internal/match"
+	"judging-server/internal/ring"
 	"judging-server/internal/tournament"
 )
 
@@ -172,5 +175,75 @@ func TestTournamentInfo(t *testing.T) {
 	}
 	if s := a.state(); s.Name != "Club Cup" || s.Date != "2026-11-14" {
 		t.Fatalf("info = %q %q", s.Name, s.Date)
+	}
+}
+
+// confirmedReady plays a bracket fight to a Red AB win, ready to confirm.
+func confirmedReady(t *testing.T, a *App) (catID string, m tournament.Match) {
+	t.Helper()
+	a.connectJudges()
+	catID, m = twoFighterBracket(t, a, nil)
+	startMatch(t, a, catID, m)
+	a.act("START_ROUND", nil)
+	if err := a.act("STOPPAGE", map[string]string{"corner": "Red", "method": "AB"}); err != nil {
+		t.Fatal(err)
+	}
+	return catID, m
+}
+
+func TestConfirmRetryRecordsResultAfterFailedSave(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	a, _, dir := newTestApp(t)
+	catID, _ := confirmedReady(t, a)
+
+	// The disk refuses the tournament file (the open fight log still works).
+	os.Chmod(dir, 0o555)
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	if err := a.act("CONFIRM_RESULT", nil); !errors.Is(err, ring.ErrNotRecorded) {
+		t.Fatalf("confirm with a failing disk: %v, want %v", err, ring.ErrNotRecorded)
+	}
+	if !a.notRecorded.Load() {
+		t.Fatal("state must say the result is not recorded")
+	}
+
+	os.Chmod(dir, 0o755)
+	if err := a.act("CONFIRM_RESULT", nil); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if a.notRecorded.Load() {
+		t.Fatal("still flagged after a successful retry")
+	}
+	b := openApp(t, dir, clock.NewFake(time.UnixMilli(1_700_000_100_000)))
+	if got := b.match(catID, 0).Status; got != tournament.Completed {
+		t.Fatalf("after restart: match %s, want COMPLETED", got)
+	}
+}
+
+func TestRestartRecordsConfirmedResultMissingFromBracket(t *testing.T) {
+	a, _, dir := newTestApp(t)
+	catID, m := confirmedReady(t, a)
+	before, err := os.ReadFile(filepath.Join(dir, "tournament.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.act("CONFIRM_RESULT", nil); err != nil {
+		t.Fatal(err)
+	}
+	a.Close()
+	// Crash between the fight log and tournament.json: the bracket on disk
+	// still has the match on the ring.
+	if err := os.WriteFile(filepath.Join(dir, "tournament.json"), before, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	b := openApp(t, dir, clock.NewFake(time.UnixMilli(1_700_000_100_000)))
+	got := b.match(catID, 0)
+	if got.Status != tournament.Completed || got.WinnerID != m.FighterRedID || got.Method != match.AB {
+		t.Fatalf("after restart: %+v, want COMPLETED for Red by AB", got)
+	}
+	if b.notRecorded.Load() {
+		t.Fatal("flagged as not recorded after recording at startup")
 	}
 }

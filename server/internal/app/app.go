@@ -12,6 +12,7 @@ import (
 	"log"
 	mrand "math/rand"
 	"sync"
+	"sync/atomic"
 
 	"judging-server/internal/clock"
 	"judging-server/internal/match"
@@ -55,6 +56,12 @@ type App struct {
 	tournament tournament.State
 	rng        *mrand.Rand
 	standalone match.FightConfig
+	// unsaved: the last tournament save failed, so the file on disk is behind memory.
+	unsaved bool
+
+	// notRecorded: the confirmed fight on the ring is not in the bracket on disk
+	// yet. Read without tmu when building state frames.
+	notRecorded atomic.Bool
 
 	recent recentIDs
 
@@ -84,6 +91,11 @@ func New(opts Options) (*App, error) {
 	}
 	if err := a.restoreFight(); err != nil {
 		return nil, err
+	}
+	// A crash between writing the confirmation to the fight log and saving the
+	// bracket leaves the result only in the log; record it now (§7).
+	if err := a.recordConfirmed(); err != nil {
+		log.Printf("startup: confirmed result not recorded in the bracket: %v", err)
 	}
 	return a, nil
 }

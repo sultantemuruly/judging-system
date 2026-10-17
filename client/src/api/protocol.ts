@@ -98,6 +98,8 @@ export interface FightView {
   stoppage_methods: Method[];
   /** All judges connected with nothing unsent: the result can be confirmed (§7). */
   judges_synced: boolean;
+  /** Confirmed, but not saved in the bracket yet: confirming again retries (§7). */
+  result_not_recorded: boolean;
   live_scores: boolean;
 }
 
@@ -124,6 +126,7 @@ export const emptyFight: FightView = {
   stoppage_methods: [],
   judges_synced: false,
   live_scores: true,
+  result_not_recorded: false,
 };
 
 // ---- Tournament (mirrors server/internal/tournament/model.go) ----

@@ -68,7 +68,18 @@ export default function ResultPanel({ view }: { view: FightView }) {
           <p className="mt-2">Only do this if the phone is broken or gone. Taps it sends later will not count.</p>
         </ConfirmDialog>
       )}
-      {result.confirmed && (
+      {result.confirmed && view.result_not_recorded && (
+        <div className="mt-3 rounded-lg bg-red-950/60 border border-red-700 p-3">
+          <div className="text-red-200 text-sm font-bold">Not saved in the bracket yet.</div>
+          <button
+            onClick={() => sendAction('CONFIRM_RESULT')}
+            className="mt-2 w-full py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold text-sm cursor-pointer"
+          >
+            Retry saving to the bracket
+          </button>
+        </div>
+      )}
+      {result.confirmed && !view.result_not_recorded && (
         <div className="mt-2 text-emerald-400 text-xs font-bold">Shown to viewers{view.bracket ? ' · bracket updated' : ''}</div>
       )}
     </div>

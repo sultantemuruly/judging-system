@@ -51,11 +51,12 @@ func (a *App) broadcastTournament() {
 
 // saveLocked writes the tournament to disk. Caller holds tmu.
 func (a *App) saveLocked() error {
-	if err := a.store.SaveTournament(a.tournament); err != nil {
+	err := a.store.SaveTournament(a.tournament)
+	a.unsaved = err != nil
+	if err != nil {
 		log.Printf("save tournament: %v", err)
-		return err
 	}
-	return nil
+	return err
 }
 
 // change runs fn on the tournament, then saves and broadcasts it.
@@ -65,6 +66,7 @@ func (a *App) change(fn func(*tournament.State) error) error {
 	if err == nil {
 		err = a.saveLocked()
 	}
+	a.refreshRecordedLocked()
 	a.tmu.Unlock()
 	a.broadcastTournament()
 	return err
@@ -73,15 +75,50 @@ func (a *App) change(fn func(*tournament.State) error) error {
 // fightDecided records a confirmed bracket fight in the bracket (§7). An error
 // reaches the operator as a NACK of the confirmation.
 func (a *App) fightDecided(f match.Fight) error {
-	ref := f.Config.Bracket
-	if ref == nil {
-		return nil
-	}
-	err := a.change(func(s *tournament.State) error { return s.CompleteMatch(*ref, f.Result(), f.Config.FightID) })
+	err := a.record(f)
 	if err != nil {
-		log.Printf("bracket %s/%s: %v", ref.CategoryID, ref.MatchID, err)
+		log.Printf("bracket %s/%s: %v", f.Config.Bracket.CategoryID, f.Config.Bracket.MatchID, err)
 	}
 	return err
+}
+
+// recordConfirmed records the confirmed fight on the ring if the bracket on
+// disk is still missing it: after a failed save, or a crash between the fight
+// log and tournament.json.
+func (a *App) recordConfirmed() error { return a.record(a.ring.Fight()) }
+
+// record writes the result of a confirmed bracket fight into its match and
+// saves the tournament. Recording the same fight again only saves again.
+func (a *App) record(f match.Fight) error {
+	ref := f.Config.Bracket
+	if ref == nil || !f.Result().Confirmed {
+		return nil
+	}
+	return a.change(func(s *tournament.State) error {
+		b, i, err := s.MatchAt(*ref)
+		if err != nil {
+			return err
+		}
+		if m := b.Matches[i]; m.Status == tournament.Completed && m.FightID == f.Config.FightID {
+			return nil
+		}
+		return s.CompleteMatch(*ref, f.Result(), f.Config.FightID)
+	})
+}
+
+// refreshRecordedLocked recomputes whether the confirmed fight on the ring is
+// missing from the bracket on disk and tells clients when that changes.
+// Caller holds tmu.
+func (a *App) refreshRecordedLocked() {
+	f := a.ring.Fight()
+	missing := false
+	if ref := f.Config.Bracket; ref != nil && f.Result().Confirmed {
+		b, i, err := a.tournament.MatchAt(*ref)
+		missing = a.unsaved || (err == nil && b.Matches[i].Status == tournament.Active)
+	}
+	if a.notRecorded.Swap(missing) != missing {
+		a.broadcastState()
+	}
 }
 
 // releaseLocked puts the bracket match of a replaced, unconfirmed fight back

@@ -15,6 +15,9 @@ import (
 type stateUpdate struct {
 	match.FightView
 	LiveScores bool `json:"live_scores"`
+	// ResultNotRecorded: the result is confirmed but not saved in the bracket
+	// yet; the operator can retry by confirming again (§7).
+	ResultNotRecorded bool `json:"result_not_recorded"`
 }
 
 // stateFrame is the STATE_UPDATE frame for the current fight.
@@ -28,7 +31,7 @@ func (a *App) stateFrameLocked() []byte {
 	a.stateSeq++
 	b, err := json.Marshal(ws.Frame{
 		Type:       "STATE_UPDATE",
-		Payload:    stateUpdate{FightView: a.ring.View(), LiveScores: showLiveScores},
+		Payload:    stateUpdate{FightView: a.ring.View(), LiveScores: showLiveScores, ResultNotRecorded: a.notRecorded.Load()},
 		ServerTime: a.nowMs(),
 		Seq:        a.stateSeq,
 	})
@@ -150,9 +153,16 @@ func (a *App) fightAction(msg ws.Action) error {
 		log.Printf("action rejected: %v", err)
 		return errRejected
 	}
+	// Confirming again records a confirmed result the bracket is missing (§7).
+	if e.Type == match.ResultConfirmed && a.ring.Fight().Result().Confirmed {
+		if err := a.recordConfirmed(); err != nil {
+			return ring.ErrNotRecorded
+		}
+		return nil
+	}
 	// Confirming while a judge still holds taps would refuse them (§7, S20);
 	// the operator may override after a warning, for a phone that is gone.
-	if e.Type == match.ResultConfirmed && !p.Force && !a.ring.Fight().Seen(e.ID) && !a.ring.JudgesSynced() {
+	if e.Type == match.ResultConfirmed && !p.Force && !a.ring.JudgesSynced() {
 		return errJudgesNotSynced
 	}
 	// The fight starts only when all three judges are connected (§1).
@@ -222,6 +232,7 @@ func (a *App) newStandaloneFight(msg ws.Action) error {
 func (a *App) replaceFightLocked() error {
 	old, err := a.ring.NewFight(newID("f-"), a.standalone)
 	released := err == nil && a.releaseLocked(old)
+	a.refreshRecordedLocked()
 	a.tmu.Unlock()
 	if released {
 		a.broadcastTournament()
