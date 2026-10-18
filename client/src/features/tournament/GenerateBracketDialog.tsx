@@ -36,7 +36,7 @@ export default function GenerateBracketDialog({ category, regenerate, onClose }:
           <p className="text-sm text-zinc-400 mt-3">
             {manual
               ? `Put each fighter in a slot (${placed} of ${fighters.length} placed). Empty slots are byes.`
-              : 'Last year’s champion and runner-up go to opposite halves; fighters from the same club or city are kept apart as far as possible.'}
+              : 'Fighters are drawn into the bracket at random.'}
           </p>
         </div>
 
@@ -53,7 +53,7 @@ export default function GenerateBracketDialog({ category, regenerate, onClose }:
                   <option value="">Bye</option>
                   {fighters.map(f => (
                     <option key={f.id} value={f.id} disabled={slots.includes(f.id) && f.id !== id}>
-                      {f.name}{f.club ? ` (${f.club})` : ''}
+                      {f.name}
                     </option>
                   ))}
                 </select>

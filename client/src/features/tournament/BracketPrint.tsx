@@ -113,10 +113,8 @@ function BracketSvg({ bracket }: { bracket: Bracket }) {
   );
 }
 
-function fighterLine(category: WeightCategory, id: string) {
-  const f = category.fighters.find(x => x.id === id);
-  if (!f) return '';
-  return [f.name, f.club, f.city].filter(Boolean).join(', ');
+function fighterName(category: WeightCategory, id: string) {
+  return category.fighters.find(x => x.id === id)?.name ?? '';
 }
 
 export default function BracketPrint({ tournament }: { tournament: TournamentState }) {
@@ -163,7 +161,7 @@ export default function BracketPrint({ tournament }: { tournament: TournamentSta
               {places.map(([place, id], i) => (
                 <tr key={i}>
                   <td className="pr-3 font-black">{place} место</td>
-                  <td className="border-b border-black min-w-[90mm]">{id ? fighterLine(category, id) : ''}</td>
+                  <td className="border-b border-black min-w-[90mm]">{id ? fighterName(category, id) : ''}</td>
                 </tr>
               ))}
             </tbody>

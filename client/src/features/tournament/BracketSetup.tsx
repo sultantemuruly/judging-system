@@ -118,14 +118,7 @@ export default function BracketSetup({ tournament }: { tournament: TournamentSta
                 {fighters.map((f, i) => (
                   <div key={f.id} className={`flex items-center gap-4 px-5 py-3 border-b border-zinc-800/50 ${editing?.id === f.id ? 'bg-zinc-800/50' : ''}`}>
                     <span className="w-6 text-zinc-500 text-sm font-bold">{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-white font-bold text-sm">
-                        {f.name}
-                        {f.is_previous_champion && <span className="ml-2 text-[11px] text-amber-400">last year’s champion</span>}
-                        {f.is_previous_second && <span className="ml-2 text-[11px] text-zinc-400">last year’s runner-up</span>}
-                      </div>
-                      <div className="text-zinc-500 text-xs">{[f.city, f.club].filter(Boolean).join(' · ')}</div>
-                    </div>
+                    <div className="flex-1 min-w-0 text-white font-bold text-sm">{f.name}</div>
                     <button onClick={() => setEditing(f)} title="Edit fighter" className="p-1.5 text-zinc-400 hover:text-white cursor-pointer"><Pencil size={15} /></button>
                     {!locked && (
                       <button onClick={() => setDialog({ kind: 'deleteFighter', fighter: f })} title="Remove fighter" className="p-1.5 text-zinc-400 hover:text-red-400 cursor-pointer"><Trash2 size={15} /></button>
