@@ -1,0 +1,4 @@
+data/
+judging-server
+tournament_data.json
+*.test
