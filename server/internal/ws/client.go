@@ -124,6 +124,9 @@ func (c *Client) readPump() {
 		}
 		// Any frame proves the connection is alive.
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
+		if c.session.Role == RoleJudge {
+			c.hub.handler.Heard(c.session)
+		}
 		if a.Type == TypeTimeSync {
 			c.hub.reply(c, TypeTimeSync, a.Payload)
 			continue

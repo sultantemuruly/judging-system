@@ -39,6 +39,7 @@ type tally struct {
 	kdRound   []Score
 	decisions [JudgeCount + 1]Corner
 	stop      *Result // set when a stoppage or the 4th warning ended the fight
+	stopAt    int64   // when that stoppage or warning was given
 }
 
 func (f Fight) tally() tally {
@@ -69,6 +70,7 @@ func (f Fight) tally() tally {
 			}
 			if w >= WarningsForDQ && t.stop == nil {
 				t.stop = &Result{Winner: e.Corner.Opponent(), Method: DQ, Final: true}
+				t.stopAt = e.At
 			}
 		case MinusPoint:
 			t.minus.add(e.Corner, 1)
@@ -80,6 +82,7 @@ func (f Fight) tally() tally {
 		case Stoppage:
 			if t.stop == nil {
 				t.stop = &Result{Winner: e.Corner, Method: e.Method, Final: true}
+				t.stopAt = e.At
 			}
 		}
 	}

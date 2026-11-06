@@ -20,6 +20,7 @@ const refusals: Record<string, string> = {
   result_confirmed: 'Результат уже подтверждён',
   decision_not_needed: 'Решение не требуется',
   server_error: 'Сбой на сервере — нажатие сохранено и будет отправлено повторно',
+  tap_too_old: 'Нажатие из очереди слишком старое (часы телефона сбились) — не засчитано',
 };
 
 /** The line under the top bar: what the judge should expect, in words. */

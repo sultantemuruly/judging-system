@@ -50,6 +50,10 @@ type Ring struct {
 	// pending is each seat's last reported count of unconfirmed taps; a seat
 	// that drops off keeps its count until its device reports again.
 	pending [match.JudgeCount + 1]int
+	// heard is when each seat's device last sent anything (its phone pings
+	// every 3 s). A phone whose Wi-Fi just died still looks connected until
+	// its socket times out, and can't report the taps it is holding (§7, S20).
+	heard [match.JudgeCount + 1]int64
 }
 
 func New(opts Options) *Ring {
@@ -244,19 +248,48 @@ func (r *Ring) JudgesSynced() bool {
 	return r.judgesSyncedLocked()
 }
 
+// judgesSyncedLocked: every judge is connected, has nothing unsent, and has
+// been heard from since the fight's last event, so no tap made before the
+// gong or the stoppage can still be on its way.
 func (r *Ring) judgesSyncedLocked() bool {
+	var last int64
+	if n := len(r.fight.Events); n > 0 {
+		last = r.fight.Events[n-1].At
+	}
 	for seat := 1; seat <= match.JudgeCount; seat++ {
-		if !r.seats[seat] || r.pending[seat] > 0 {
+		if !r.seats[seat] || r.pending[seat] > 0 || r.heard[seat] < last {
 			return false
 		}
 	}
 	return true
 }
 
-// SetSeats records which judge seats (index 1–3) have a live device.
+// Heard records that the device on seat just sent something.
+func (r *Ring) Heard(seat int) {
+	if seat < 1 || seat > match.JudgeCount {
+		return
+	}
+	r.mu.Lock()
+	before := r.judgesSyncedLocked()
+	r.heard[seat] = r.now()
+	changed := r.judgesSyncedLocked() != before
+	r.mu.Unlock()
+	if changed {
+		r.opts.OnChange()
+	}
+}
+
+// SetSeats records which judge seats (index 1–3) have a live device. A newly
+// connected device counts as heard from.
 func (r *Ring) SetSeats(seats [match.JudgeCount + 1]bool) {
 	r.mu.Lock()
 	changed := r.seats != seats
+	now := r.now()
+	for seat := 1; seat <= match.JudgeCount; seat++ {
+		if seats[seat] && !r.seats[seat] {
+			r.heard[seat] = now
+		}
+	}
 	r.seats = seats
 	r.mu.Unlock()
 	if changed {

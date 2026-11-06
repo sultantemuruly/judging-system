@@ -36,12 +36,22 @@ func openApp(t *testing.T, dir string, clk clock.Clock) *App {
 }
 
 func (a *App) act(typ string, payload any) error {
+	if typ == "CONFIRM_RESULT" {
+		a.judgesPing() // real phones ping every 3 s
+	}
 	b, _ := json.Marshal(payload)
 	return a.Do(ws.Action{Type: typ, Payload: b})
 }
 
 // connectJudges marks all three seats as connected without real sockets.
 func (a *App) connectJudges() { a.ring.SetSeats([4]bool{false, true, true, true}) }
+
+// judgesPing stands in for the three phones' regular pings.
+func (a *App) judgesPing() {
+	for seat := 1; seat <= 3; seat++ {
+		a.ring.Heard(seat)
+	}
+}
 
 func (a *App) state() tournament.State {
 	a.tmu.Lock()

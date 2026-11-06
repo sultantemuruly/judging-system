@@ -200,11 +200,90 @@ func TestNoTapsAfterStoppage(t *testing.T) {
 	s := newScript(t, FightConfig{})
 	s.startRound()
 	s.advance(5_000)
-	madeAt := s.now
-	s.advance(1000)
 	s.must(Event{Type: Stoppage, Corner: Red, Method: KO})
 	s.advance(3000)
-	s.reject(Event{Type: Hit, Actor: judge(1), Corner: Blue, Offline: true, ClientTime: madeAt}, ErrFightStopped)
+	s.reject(Event{Type: Hit, Actor: judge(1), Corner: Blue}, ErrFightStopped)
+	s.reject(Event{Type: Hit, Actor: judge(1), Corner: Blue, Offline: true, ClientTime: s.now - 1000}, ErrFightStopped)
+}
+
+// A tap made before a stoppage but received after it counts, so it isn't
+// lost when the stoppage turns out to be a mistake and is undone (§3).
+func TestTapMadeBeforeStoppageSurvivesItsUndo(t *testing.T) {
+	s := newScript(t, FightConfig{})
+	s.startRound()
+	s.advance(5_000)
+	madeAt := s.now
+	s.advance(200)
+	s.must(Event{ID: "rsc", Type: Stoppage, Corner: Red, Method: RSC})
+	s.advance(300)
+	s.must(Event{Type: Hit, Actor: judge(1), Corner: Blue, ClientTime: madeAt})
+	s.must(Event{Type: RefereeActionUndone, TargetID: "rsc"})
+	s.wantTotal(1, Score{Blue: 1})
+}
+
+func TestTapMadeBeforeDisqualifyingWarningCounts(t *testing.T) {
+	s := newScript(t, FightConfig{})
+	s.startRound()
+	s.advance(1000)
+	for range WarningsForDQ - 1 {
+		s.referee(OfficialWarning, Red)
+	}
+	madeAt := s.now
+	s.advance(100)
+	s.referee(OfficialWarning, Red) // 4th: disqualified
+	s.advance(300)
+	s.must(Event{Type: Hit, Actor: judge(2), Corner: Blue, ClientTime: madeAt})
+	s.reject(Event{Type: Hit, Actor: judge(2), Corner: Blue}, ErrFightStopped)
+}
+
+// Gong grace (§3) runs from when the clock stopped: ending a round from a
+// pause gives none, so a stale phone can't add a tap made while time stood.
+func TestNoGongGraceWhenRoundEndsFromPause(t *testing.T) {
+	s := newScript(t, FightConfig{})
+	s.startRound()
+	s.advance(10_000)
+	s.must(Event{Type: ClockPaused})
+	s.advance(60_000)
+	s.endRound()
+	s.advance(300)
+	s.reject(Event{Type: Hit, Actor: judge(1), Corner: Red}, ErrClockNotRunning)
+}
+
+func TestQueuedTapWithImplausiblyOldTimeRefused(t *testing.T) {
+	s := newScript(t, FightConfig{})
+	s.startRound()
+	s.advance(20 * 60_000) // a long round, so only the age decides
+	s.reject(Event{Type: Hit, Actor: judge(1), Corner: Red, Offline: true, ClientTime: s.now - MaxQueuedTapAgeMs - 1}, ErrTapTooOld)
+	s.reject(Event{Type: HitUndone, Actor: judge(1), Offline: true, ClientTime: s.now - MaxQueuedTapAgeMs - 1}, ErrTapTooOld)
+	s.must(Event{Type: Hit, Actor: judge(1), Corner: Red, Offline: true, ClientTime: s.now - MaxQueuedTapAgeMs + 1000})
+}
+
+// A log is loaded by trusting the rounds its taps were accepted in, so a rule
+// change in a newer version can't stop a saved fight from loading.
+func TestReplayTrustsStoredRounds(t *testing.T) {
+	s := newScript(t, FightConfig{})
+	s.startRound()
+	s.advance(1000)
+	s.must(Event{ID: "tap", Type: Hit, Actor: judge(1), Corner: Red})
+	s.must(Event{ID: "undo", Type: HitUndone, Actor: judge(1)})
+	s.must(Event{ID: "tap2", Type: Hit, Actor: judge(1), Corner: Blue})
+	events := append([]Event(nil), s.f.Events...)
+	// Pretend tap2 is outside every round by today's rules.
+	for i := range events {
+		if events[i].ID == "tap2" {
+			events[i].At, events[i].ClientTime = 1, 0
+		}
+	}
+	f, err := Replay(events)
+	if err != nil {
+		t.Fatalf("replay refused a stored log: %v", err)
+	}
+	if got := f.View(s.now).Judges[0].Total; got != (Score{Blue: 1}) {
+		t.Fatalf("judge 1 after replay = %+v, want blue 1", got)
+	}
+	if _, err := Apply(f, Event{ID: "late", Type: Hit, Actor: judge(1), Corner: Red, At: 1}); err == nil {
+		t.Fatal("after replay new taps must be validated again")
+	}
 }
 
 func TestQueuedTapJustAfterGongCounts(t *testing.T) {

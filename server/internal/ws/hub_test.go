@@ -24,6 +24,7 @@ func (h *broadcastingHandler) Snapshot() [][]byte                             { 
 func (h *broadcastingHandler) QueueStatus(Session, int)                       {}
 func (h *broadcastingHandler) JudgeAllowed(int, string, string) (int64, bool) { return 0, true }
 func (h *broadcastingHandler) OperatorAllowed(string) bool                    { return true }
+func (h *broadcastingHandler) Heard(Session)                                  {}
 func (h *broadcastingHandler) SeatsChanged([4]bool) {
 	h.changes.Add(1)
 	time.Sleep(time.Millisecond) // computing the view takes a moment

@@ -20,6 +20,7 @@ var (
 	ErrUndoWindowClosed   = errors.New("undo_window_closed")
 	ErrNothingToUndo      = errors.New("nothing_to_undo")
 	ErrFightStopped       = errors.New("fight_stopped")
+	ErrTapTooOld          = errors.New("tap_too_old")
 	ErrResultConfirmed    = errors.New("result_confirmed")
 	ErrResultNotFinal     = errors.New("result_not_final")
 	ErrDecisionNotNeeded  = errors.New("decision_not_needed")
@@ -43,6 +44,10 @@ type Fight struct {
 	decisions [JudgeCount + 1]Corner
 	confirmed bool
 	medical   int64 // start of a running medical timeout, 0 if none
+	// replaying: folding a stored log. Judges' taps and undos were validated
+	// when they were accepted; their stored round and target are trusted, so a
+	// rule change between versions can't stop a saved fight from loading.
+	replaying bool
 }
 
 // Apply validates e against the rules and returns the fight with e appended.
@@ -68,13 +73,15 @@ func Apply(f Fight, e Event) (Fight, error) {
 
 // Replay folds a stored log back into a fight.
 func Replay(events []Event) (Fight, error) {
-	var f Fight
+	f := Fight{replaying: true}
 	for _, e := range events {
 		var err error
 		if f, err = Apply(f, e); err != nil {
+			f.replaying = false
 			return f, err
 		}
 	}
+	f.replaying = false
 	return f, nil
 }
 
@@ -163,16 +170,31 @@ func (f *Fight) hit(e *Event) error {
 	if !e.Corner.Valid() {
 		return ErrInvalidCorner
 	}
-	if _, stopped := f.stopped(); stopped {
+	if f.replaying && e.Round > 0 {
+		return nil
+	}
+	if queuedTooOld(e) {
+		return ErrTapTooOld
+	}
+	// A tap is judged by when it was made, so Wi-Fi delay never costs it (§3):
+	// one made before a stoppage counts even if it arrives after it, and so
+	// isn't lost if the stoppage is undone.
+	at := tapTime(e)
+	if stopAt, stopped := f.stoppedAt(); stopped && at >= stopAt {
 		return ErrFightStopped
 	}
-	// A tap is judged by when it was made, so Wi-Fi delay never costs it (§3).
-	r := f.roundAcceptingAt(tapTime(e), e.At)
+	r := f.roundAcceptingAt(at, e.At)
 	if r == 0 {
 		return ErrClockNotRunning
 	}
 	e.Round = r
 	return nil
+}
+
+// queuedTooOld: an action from the offline queue whose device time is
+// implausibly old (the phone's clock jumped while offline).
+func queuedTooOld(e *Event) bool {
+	return e.Offline && e.ClientTime > 0 && e.At-e.ClientTime > MaxQueuedTapAgeMs
 }
 
 // tapTime is when a judge's action was made, in server time (§3). A queued
@@ -198,6 +220,13 @@ func (f *Fight) undoHit(e *Event) error {
 	seat, err := judgeSeat(e)
 	if err != nil {
 		return err
+	}
+	if f.replaying && e.TargetID != "" {
+		f.undone[e.TargetID] = true
+		return nil
+	}
+	if queuedTooOld(e) {
+		return ErrTapTooOld
 	}
 	at := tapTime(e)
 	r := f.roundUndoableAt(at)
@@ -385,4 +414,10 @@ func (f Fight) stopped() (Result, bool) {
 		return *t.stop, true
 	}
 	return Result{}, false
+}
+
+// stoppedAt is when the stoppage (or 4th warning) in effect was given.
+func (f Fight) stoppedAt() (int64, bool) {
+	t := f.tally()
+	return t.stopAt, t.stop != nil
 }

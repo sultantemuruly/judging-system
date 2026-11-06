@@ -27,6 +27,8 @@ type Handler interface {
 	// OperatorAllowed reports whether token is a valid admin login, asked once
 	// per operator connection before it joins the hub.
 	OperatorAllowed(token string) bool
+	// Heard reports that a judge's device sent a frame (proof it is alive).
+	Heard(s Session)
 }
 
 // Hub keeps the set of connections and the judge seats. Only its run

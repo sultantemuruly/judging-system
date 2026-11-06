@@ -144,3 +144,27 @@ func TestHeartbeatBelongsToOneFight(t *testing.T) {
 		t.Fatalf("another fight's heartbeat = %d, want 0", got)
 	}
 }
+
+// A new fight's log that never got its first event doesn't replace the fight
+// on the ring: after a restart the old fight is restored.
+func TestCurrentFightMovesOnlyWithItsFirstEvent(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, _ := s.StartFight("old")
+	if err := old.Append(match.Event{ID: "old-created", Type: match.FightCreated}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StartFight("new"); err != nil {
+		t.Fatal(err)
+	}
+	if id, _, _ := s.CurrentFight(); id != "old" {
+		t.Fatalf("current fight = %q before the new one has an event, want old", id)
+	}
+	l, _ := s.StartFight("new")
+	l.Append(match.Event{ID: "new-created", Type: match.FightCreated})
+	if id, _, _ := s.CurrentFight(); id != "new" {
+		t.Fatalf("current fight = %q, want new", id)
+	}
+}

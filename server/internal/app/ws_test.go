@@ -391,3 +391,34 @@ func TestQueueStatusFromViewerIsIgnored(t *testing.T) {
 		t.Fatalf("confirm: NACK %q (a viewer's queue status must not count)", r)
 	}
 }
+
+// S20 gap: a phone whose Wi-Fi died just before the end still looks connected
+// until its socket times out, and can't report the taps it holds. Confirm
+// waits until every judge has been heard from since the fight's last event.
+func TestConfirmWaitsForJudgesSilentSinceTheEnd(t *testing.T) {
+	url, _, clk := wsServer(t)
+	j := judges(t, url)
+	op := dialOperator(t, url)
+	op.waitState("judges connected", func(s stateUpdate) bool { return s.JudgesSynced })
+
+	clk.Advance(5 * time.Second) // the phones go quiet; then the fight ends
+	for _, a := range []struct{ id, typ string }{{"s", "START_ROUND"}, {"ab", "STOPPAGE"}} {
+		op.send(a.id, a.typ, map[string]string{"corner": "Red", "method": "AB"})
+		if r := op.result(a.id); r != "" {
+			t.Fatalf("%s: NACK %q", a.typ, r)
+		}
+	}
+	op.send("c1", "CONFIRM_RESULT", nil)
+	if r := op.result("c1"); r != errJudgesNotSynced.Error() {
+		t.Fatalf("confirm with judges silent since the end: %q, want %q", r, errJudgesNotSynced)
+	}
+
+	for seat := 1; seat <= 3; seat++ {
+		j[seat].send("", ws.TypeTimeSync, map[string]int{"client_sent": 1})
+	}
+	op.waitState("judges heard again", func(s stateUpdate) bool { return s.JudgesSynced })
+	op.send("c2", "CONFIRM_RESULT", nil)
+	if r := op.result("c2"); r != "" {
+		t.Fatalf("confirm once every judge was heard: NACK %q", r)
+	}
+}
