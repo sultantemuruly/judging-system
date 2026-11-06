@@ -225,4 +225,26 @@ describe('socket', () => {
     expect(ws.hello()).toMatchObject({ password: '4821' });
     expect(ws.hello().device).toBeTruthy();
   });
+
+  it("says which session its status is about, so a page ignores the previous page's lock", async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'operator' });
+    const op = FakeSocket.instances[0];
+    op.open();
+    op.receive({ type: 'ADMIN_AUTH_FAILED', payload: {} });
+    op.onclose?.();
+    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', session: { role: 'operator' } });
+
+    socket.connect({ role: 'judge', seat: 2 });
+    expect(socket.getConnectionInfo()).toMatchObject({ status: 'connecting', session: { role: 'judge', seat: 2 } });
+  });
+
+  it('asks the server which seats are locked and taken', async () => {
+    const socket = await loadSocket();
+    const seats = { protected: [false, true, false], occupied: [true, false, false] };
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => seats })));
+    expect(await socket.fetchJudgeSeats()).toEqual(seats);
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('offline'); }));
+    expect(await socket.fetchJudgeSeats()).toBeNull();
+  });
 });

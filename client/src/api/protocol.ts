@@ -281,6 +281,14 @@ export interface LoginResponse {
   token: string;
 }
 
+/** GET /api/seats (Go app.judgeSeats): what a device needs before picking a judge seat. */
+export interface JudgeSeats {
+  /** Seats that ask for a password (index 0 is seat 1). */
+  protected: boolean[];
+  /** Seats with a phone on them now: taking one disconnects that phone. */
+  occupied: boolean[];
+}
+
 /** Operator → server: give a judge seat a password; an empty one opens the seat. */
 export interface SetJudgePasswordPayload {
   seat: number;

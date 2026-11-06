@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { reclaimSeat, sendAction, subscribeToResults } from '../../api/socket';
+import { reclaimSeat, sameSession, sendAction, subscribeToResults } from '../../api/socket';
 import type { Corner, FightView, Phase } from '../../api/protocol';
 import { useConnection } from '../../shared/useConnection';
 import { useWakeLock } from './useWakeLock';
@@ -45,7 +45,11 @@ export default function JudgeScreen({ view }: Props) {
   const seat = Number(id);
   const me = view.judges.find(j => j.seat === seat);
   const { clock, result } = view;
-  const { status, pending, wrongPassword, retryAfterMs } = useConnection();
+  const connection = useConnection();
+  // Until this page's own connection starts, the status is the previous page's.
+  const mine = sameSession(connection.session, { role: 'judge', seat });
+  const { pending, wrongPassword, retryAfterMs } = connection;
+  const status = mine ? connection.status : 'connecting';
   const [notice, setNotice] = useState('');
 
   useWakeLock(true);
