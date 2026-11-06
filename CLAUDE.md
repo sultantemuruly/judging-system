@@ -13,13 +13,13 @@ Real-time judging system for amateur kickboxing tournaments (Low-kick only, WAKO
 Server (Go, module `judging-server`, Go 1.25):
 ```bash
 cd server
-go run ./cmd/server               # http://localhost:8080, /ws and /health; PORT, DATA_DIR env vars
+ADMIN_PASSWORD=… go run ./cmd/server   # http://localhost:8080: /ws, /api/login, /health; PORT, DATA_DIR, ADMIN_LOGIN (default admin), ADMIN_PASSWORD (required)
 go build ./... && go vet ./...
 go test ./...                     # all tests
 go test ./... -run TestSpec -v    # the spec §10 scenarios
 go test -race ./...               # concurrency changes must pass this
 ```
-The server keeps its data in `DATA_DIR` (default `./data`, gitignored): one JSONL event log per fight, `current_fight`, `heartbeat`, `tournament.json`. On first start it imports an old `tournament_data.json` from the working directory. Run experiments with a scratch `DATA_DIR`, not the repo's.
+The server keeps its data in `DATA_DIR` (default `./data`, gitignored): one JSONL event log per fight, `current_fight`, `heartbeat`, `tournament.json`, `judge_passwords.json` (salted hashes; kept out of `tournament.json` because every device receives that), `admin_secret` (signs admin login tokens). On first start it imports an old `tournament_data.json` from the working directory. Run experiments with a scratch `DATA_DIR`, not the repo's.
 
 Client (React 19 + TypeScript + Vite 7 + Tailwind 4):
 ```bash
@@ -30,9 +30,9 @@ npm run build    # tsc -b && vite build → client/dist
 npm run lint
 npm test         # vitest
 ```
-The Vite dev server connects to `ws://<host>:8080/ws` directly; the built app always uses the same origin, `ws(s)://<host>/ws`, through nginx (`client/nginx.conf`). The page decides the connection's role: `/judge/N` is judge seat N, `/viewer` a viewer, anything else the operator.
+The Vite dev server connects to `ws://<host>:8080/ws` directly and proxies `/api` to `:8080`; the built app always uses the same origin, `ws(s)://<host>/ws`, through nginx (`client/nginx.conf`). The page decides the connection's role: `/judge/N` is judge seat N, `/viewer` and the judge picker `/judge` are viewers, anything else the operator.
 
-Docker (`docker-compose.yml`): `docker compose up --build -d`, then open `http://<this machine>/` on every device (`HTTP_PORT` changes the port). nginx serves the client and proxies `/ws` to the server, whose port isn't published. Data lives in the named volume `judging-data` (mounted at `/app/data`), so it survives `docker compose down` and rebuilds; `down -v` deletes it. To import an old `tournament_data.json` into an empty volume: `docker compose create`, `docker compose cp server/tournament_data.json server:/app/data/tournament.json`, `docker compose run --rm --no-deps -u root --entrypoint chown server appuser /app/data/tournament.json` (the copy keeps your host uid, which the server's `appuser` can't read), then `docker compose up -d`.
+Docker (`docker-compose.yml`): copy `.env.example` to `.env` and set `ADMIN_PASSWORD` (the repo is public: never commit the real one), then `docker compose up --build -d`, then open `http://<this machine>/` on every device (`HTTP_PORT` changes the port). nginx serves the client and proxies `/ws` to the server, whose port isn't published. Data lives in the named volume `judging-data` (mounted at `/app/data`), so it survives `docker compose down` and rebuilds; `down -v` deletes it. To import an old `tournament_data.json` into an empty volume: `docker compose create`, `docker compose cp server/tournament_data.json server:/app/data/tournament.json`, `docker compose run --rm --no-deps -u root --entrypoint chown server appuser /app/data/tournament.json` (the copy keeps your host uid, which the server's `appuser` can't read), then `docker compose up -d`.
 
 ## Architecture
 
@@ -45,6 +45,7 @@ server/
   internal/ring/            the fight on the ring: validate → append to log → commit → re-arm the 0:00 alarm → notify
   internal/store/           data directory: per-fight JSONL log, heartbeat, atomic tournament.json; recovery reads
   internal/ws/              hub, client pumps, sessions (role/seat/device), seat takeover, ACK/NACK, protocol types
+  internal/access/          judges' seat passwords (salted hashes, check) — pure
   internal/clock/           real and fake clocks, Alarm
   internal/app/             decodes actions, checks roles, links fights to the bracket, broadcasts state
 ```
@@ -69,7 +70,8 @@ client/src/
 - One display component per concept (e.g. the score-difference bar), not copies per page.
 
 Known gaps (pilot scope, spec §0):
-- No PINs/auth: any device can open any page; result correction is "chief judge only" only by being on the bracket screen.
+- Judge seats can have passwords (set under Categories → Judge passwords, `SET_JUDGE_PASSWORD`). The server checks one when a judge's device connects (`?password=`) and answers a wrong one with `JUDGE_AUTH_FAILED` and a close; the phone remembers it in localStorage and stays locked, not reconnecting, until a new one is typed. Queued taps survive the lock. The device that last got onto a seat (its random device ID, saved as `holder` in `judge_passwords.json`) reconnects without a password, also after the password changes or the server restarts, so a judge on the seat is never locked out by a Wi-Fi drop; other devices need the password. 5 wrong passwords lock a seat for 30 s (doubling, max 10 min; `access.Limiter`), but never lock out its holder. Spec §0 left PINs out of the pilot; this was added on the club's request.
+- Operator/admin pages need the admin login: `POST /api/login` returns an HMAC token (key in `admin_secret`, so it survives restarts and dies when the password changes); the page connects with `?token=` and without a valid one gets `ADMIN_AUTH_FAILED` and the login screen. Failed logins wait 1 s one after another (not in parallel), and 5 lock the login (429 + `Retry-After`). Known follow-ups: the token never expires and Log out is local to the device; credentials in the `/ws` query string can reach nginx's error log. One shared account, no roles: result correction is "chief judge only" only by being on the bracket screen. Viewer pages are open.
 - `MatchSchedule.tsx` priorities are hardcoded to one past tournament's categories.
 - Wake Lock needs HTTPS; on plain-HTTP LAN judges must disable auto-lock.
 

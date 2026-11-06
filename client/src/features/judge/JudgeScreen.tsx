@@ -4,6 +4,7 @@ import { reclaimSeat, sendAction, subscribeToResults } from '../../api/socket';
 import type { Corner, FightView, Phase } from '../../api/protocol';
 import { useConnection } from '../../shared/useConnection';
 import { useWakeLock } from './useWakeLock';
+import PasswordGate from './PasswordGate';
 import { Undo2, WifiOff } from 'lucide-react';
 
 interface Props {
@@ -44,7 +45,7 @@ export default function JudgeScreen({ view }: Props) {
   const seat = Number(id);
   const me = view.judges.find(j => j.seat === seat);
   const { clock, result } = view;
-  const { status, pending } = useConnection();
+  const { status, pending, wrongPassword, retryAfterMs } = useConnection();
   const [notice, setNotice] = useState('');
 
   useWakeLock(true);
@@ -63,6 +64,10 @@ export default function JudgeScreen({ view }: Props) {
     const t = window.setTimeout(() => setNotice(''), 3000);
     return () => clearTimeout(t);
   }, [notice]);
+
+  if (status === 'locked') {
+    return <PasswordGate seat={seat} wrong={wrongPassword} retryAfterMs={retryAfterMs} />;
+  }
 
   if (status === 'replaced') {
     return (

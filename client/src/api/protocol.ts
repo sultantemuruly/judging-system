@@ -242,10 +242,39 @@ export interface ActionFrame {
 
 /** Server → client. */
 export interface ServerFrame {
-  type: 'STATE_UPDATE' | 'TOURNAMENT_STATE_UPDATE' | 'ACK' | 'NACK' | 'TIME_SYNC' | 'SESSION_REPLACED';
+  type: 'STATE_UPDATE' | 'TOURNAMENT_STATE_UPDATE' | 'ACK' | 'NACK' | 'TIME_SYNC' | 'SESSION_REPLACED'
+    | 'JUDGE_ACCESS' | 'JUDGE_AUTH_FAILED' | 'ADMIN_AUTH_FAILED';
   payload: unknown;
   server_time: number;
   seq?: number;
+}
+
+/** Which judge seats need a password: protected[0] is seat 1 (state frame, has seq). */
+export interface JudgeAccessPayload {
+  protected: [boolean, boolean, boolean];
+}
+
+/** The only frame a judge's device gets when its password doesn't open the seat. */
+export interface JudgeAuthFailedPayload {
+  seat: number;
+  /** > 0: too many wrong passwords; every try is refused this long. */
+  retry_after_ms?: number;
+}
+
+/** POST /api/login: the admin account; the answer's token opens the operator's pages (?token=). */
+export interface LoginRequest {
+  login: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  token: string;
+}
+
+/** Operator → server: give a judge seat a password; an empty one opens the seat. */
+export interface SetJudgePasswordPayload {
+  seat: number;
+  password: string;
 }
 
 export interface AckPayload {

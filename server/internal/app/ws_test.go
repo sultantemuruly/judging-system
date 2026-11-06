@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,7 +22,21 @@ func wsServer(t *testing.T) (url string, a *App, clk *clock.Fake) {
 	a, clk, _ = newTestApp(t)
 	srv := httptest.NewServer(http.HandlerFunc(a.Hub().ServeWS))
 	t.Cleanup(srv.Close)
-	return "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws", a, clk
+	url = "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+	operatorTokens.Store(url, adminToken(t, a))
+	t.Cleanup(func() { operatorTokens.Delete(url) })
+	return url, a, clk
+}
+
+// operatorTokens: the admin token of each test server, so dial can log
+// operator connections in.
+var operatorTokens sync.Map
+
+// dialOperator connects to url as the logged-in operator.
+func dialOperator(t *testing.T, url string) *wsConn {
+	t.Helper()
+	tok, _ := operatorTokens.Load(url)
+	return dial(t, url, "role=operator&token="+tok.(string))
 }
 
 type wsConn struct {
@@ -134,7 +149,7 @@ func judges(t *testing.T, url string) [4]*wsConn {
 
 func TestStartNeedsAllThreeJudges(t *testing.T) {
 	url, _, _ := wsServer(t)
-	op := dial(t, url, "role=operator")
+	op := dialOperator(t, url)
 	op.send("start-1", "START_ROUND", nil)
 	if r := op.result("start-1"); r != "judges_not_connected" {
 		t.Fatalf("start without judges: %q, want judges_not_connected", r)
@@ -152,7 +167,7 @@ func TestStartNeedsAllThreeJudges(t *testing.T) {
 func TestRolesAreEnforced(t *testing.T) {
 	url, a, _ := wsServer(t)
 	j := judges(t, url)
-	op := dial(t, url, "role=operator")
+	op := dialOperator(t, url)
 	viewer := dial(t, url, "role=viewer")
 	op.send("s", "START_ROUND", nil)
 	op.result("s")
@@ -180,7 +195,7 @@ func TestRolesAreEnforced(t *testing.T) {
 func TestSpec_S15_SecondPhoneTakesOverSeat(t *testing.T) {
 	url, a, _ := wsServer(t)
 	j := judges(t, url)
-	op := dial(t, url, "role=operator")
+	op := dialOperator(t, url)
 	op.send("s", "START_ROUND", nil)
 	op.result("s")
 
@@ -223,7 +238,7 @@ func TestSecondTabSameDeviceReplacesFirst(t *testing.T) {
 func TestSpec_S16_TapTimeOverWebSocket(t *testing.T) {
 	url, _, clk := wsServer(t)
 	j := judges(t, url)
-	op := dial(t, url, "role=operator")
+	op := dialOperator(t, url)
 	op.send("s", "START_ROUND", nil)
 	op.result("s")
 	clk.Advance(30 * time.Second)
@@ -247,7 +262,7 @@ func TestSpec_S16_TapTimeOverWebSocket(t *testing.T) {
 func TestSpec_S11_OfflineTapsCountedOnceAfterReconnect(t *testing.T) {
 	url, a, clk := wsServer(t)
 	j := judges(t, url)
-	op := dial(t, url, "role=operator")
+	op := dialOperator(t, url)
 	op.send("s", "START_ROUND", nil)
 	op.result("s")
 	start := clock.Ms(clk.Now())
@@ -290,7 +305,7 @@ func TestSpec_S11_OfflineTapsCountedOnceAfterReconnect(t *testing.T) {
 
 func TestResentTournamentActionAppliedOnce(t *testing.T) {
 	url, a, _ := wsServer(t)
-	op := dial(t, url, "role=operator")
+	op := dialOperator(t, url)
 	for range 2 {
 		op.send("add-cat", "ADD_CATEGORY", map[string]string{"name": "-71kg"})
 		if r := op.result("add-cat"); r != "" {
@@ -305,7 +320,7 @@ func TestResentTournamentActionAppliedOnce(t *testing.T) {
 
 func TestLargeActionIsAccepted(t *testing.T) {
 	url, _, _ := wsServer(t)
-	op := dial(t, url, "role=operator")
+	op := dialOperator(t, url)
 	seeding := make([]string, 32)
 	for i := range seeding {
 		seeding[i] = strings.Repeat("x", 40) // ~1.5 KB, well over the old 512-byte limit
@@ -320,7 +335,7 @@ func TestLargeActionIsAccepted(t *testing.T) {
 func finishedFight(t *testing.T, url string) (op *wsConn, j [4]*wsConn) {
 	t.Helper()
 	j = judges(t, url)
-	op = dial(t, url, "role=operator")
+	op = dialOperator(t, url)
 	op.waitState("judges connected", func(s stateUpdate) bool { return s.JudgesSynced })
 	for _, a := range []struct{ id, typ string }{{"s", "START_ROUND"}, {"ab", "STOPPAGE"}} {
 		op.send(a.id, a.typ, map[string]string{"corner": "Red", "method": "AB"})
@@ -383,7 +398,7 @@ func TestQueueStatusFromViewerIsIgnored(t *testing.T) {
 func TestConfirmWaitsForJudgesSilentSinceTheEnd(t *testing.T) {
 	url, _, clk := wsServer(t)
 	j := judges(t, url)
-	op := dial(t, url, "role=operator")
+	op := dialOperator(t, url)
 	op.waitState("judges connected", func(s stateUpdate) bool { return s.JudgesSynced })
 
 	clk.Advance(5 * time.Second) // the phones go quiet; then the fight ends

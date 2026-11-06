@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { LogOut } from 'lucide-react';
+import { logoutAdmin } from '../api/socket';
 
 /** The operator's pages, one click apart: the ring and the three tournament pages. */
 const pages = [
@@ -23,7 +25,10 @@ export default function NavBar({ children }: { children?: ReactNode }) {
           {p.label}
         </NavLink>
       ))}
-      <div className="ml-auto flex items-center gap-3">{children}</div>
+      <div className="ml-auto flex items-center gap-3">
+        {children}
+        <button onClick={logoutAdmin} title="Log out" className="p-2 text-zinc-500 hover:text-white cursor-pointer"><LogOut size={16} /></button>
+      </div>
     </nav>
   );
 }

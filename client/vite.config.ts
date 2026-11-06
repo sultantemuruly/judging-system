@@ -12,5 +12,7 @@ export default defineConfig({
   server: {
     host: true, // Listen on all local IPs
     port: 5173,
+    // The admin login is plain HTTP; the WebSocket goes straight to :8080.
+    proxy: { '/api': 'http://localhost:8080' },
   }
 })

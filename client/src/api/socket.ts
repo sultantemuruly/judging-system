@@ -4,18 +4,23 @@
 // (and in localStorage) and resent after a reconnect, so no tap is lost (§9).
 
 import type {
-  AckPayload, ActionFrame, FightView, NackPayload, QueueStatusPayload, ServerFrame, Session, TournamentState,
+  AckPayload, ActionFrame, FightView, JudgeAccessPayload, JudgeAuthFailedPayload, LoginRequest, LoginResponse, NackPayload,
+  QueueStatusPayload, ServerFrame, Session, TournamentState,
 } from './protocol';
 import { ActionQueue, type QueuedAction } from './queue';
 import { deviceId, newId } from './ids';
 import { addTimeSample, noteServerTime, resetTimeSamples, serverNow } from './serverClock';
 
-export type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'replaced';
+/** 'locked': the server refused this judge seat's password, or the operator isn't
+ *  logged in; no reconnect until a new password is entered. */
+export type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'replaced' | 'locked';
 
 /** The server's answer to one action: ok, or the NACK reason. */
 export interface ActionResult {
   ok: boolean;
   reason?: string;
+  /** Admin login locked out: seconds until the next try is accepted. */
+  retryAfterS?: number;
 }
 
 // The WebSocket URL:
@@ -24,6 +29,9 @@ export interface ActionResult {
 const BASE_URL = import.meta.env.DEV
   ? `ws://${window.location.hostname}:8080/ws`
   : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
+
+// Admin login: same origin in both modes (Vite proxies /api to the Go server in dev).
+const LOGIN_URL = '/api/login';
 
 const PING_EVERY_MS = 3_000;
 /** No frame for this long means the connection is dead even if the browser hasn't noticed. */
@@ -50,6 +58,7 @@ const stateListeners = new Set<Listener<FightView>>();
 const tournamentListeners = new Set<Listener<TournamentState>>();
 const resultListeners = new Set<(type: string, r: ActionResult) => void>();
 const statusListeners = new Set<() => void>();
+const accessListeners = new Set<() => void>();
 
 function subscribe<T>(set: Set<T>, cb: T) {
   set.add(cb);
@@ -61,14 +70,24 @@ export const subscribeToTournament = (cb: Listener<TournamentState>) => subscrib
 /** Called with every ACK/NACK of an action sent from this device. */
 export const subscribeToResults = (cb: (type: string, r: ActionResult) => void) => subscribe(resultListeners, cb);
 export const subscribeToStatus = (cb: () => void) => subscribe(statusListeners, cb);
+export const subscribeToJudgeAccess = (cb: () => void) => subscribe(accessListeners, cb);
+
+let judgeAccess: JudgeAccessPayload = { protected: [false, false, false] };
+/** Which judge seats need a password, as the server last said. */
+export const getJudgeAccess = () => judgeAccess;
 
 export interface ConnectionInfo {
   status: ConnectionStatus;
   /** Judge actions made on this device that the server hasn't confirmed yet. */
   pending: number;
+  /** Locked although this device gave a password (or admin token): it was wrong or has been changed. */
+  wrongPassword: boolean;
+  /** Locked out after too many wrong passwords: no try is accepted for this many ms (0 if not). */
+  retryAfterMs: number;
 }
 
-let info: ConnectionInfo = { status, pending: 0 };
+let retryAfterMs = 0;
+let info: ConnectionInfo = { status, pending: 0, wrongPassword: false, retryAfterMs: 0 };
 export const getConnectionInfo = () => info;
 
 function setStatus(next: ConnectionStatus) {
@@ -79,18 +98,21 @@ function setStatus(next: ConnectionStatus) {
 function publishInfo() {
   reportQueue();
   const pending = queue?.size ?? 0;
-  if (info.status === status && info.pending === pending) return;
-  info = { status, pending };
+  const wrongPassword = status === 'locked' && triedPassword !== '';
+  const wait = status === 'locked' ? retryAfterMs : 0;
+  if (info.status === status && info.pending === pending && info.wrongPassword === wrongPassword && info.retryAfterMs === wait) return;
+  info = { status, pending, wrongPassword, retryAfterMs: wait };
   statusListeners.forEach(cb => cb());
 }
 
 // ---- connection ----
 
-/** The page decides the connection's role: /judge/N is judge seat N, /viewer a viewer, anything else the operator. */
+/** The page decides the connection's role: /judge/N is judge seat N, /viewer and
+ *  the judge picker (/judge) are viewers, anything else the operator. */
 export function sessionForPath(path: string): Session {
   const judge = path.match(/^\/judge\/([1-3])\/?$/);
   if (judge) return { role: 'judge', seat: Number(judge[1]) };
-  if (path.startsWith('/viewer')) return { role: 'viewer' };
+  if (path.startsWith('/viewer') || path.startsWith('/judge')) return { role: 'viewer' };
   return { role: 'operator' };
 }
 
@@ -109,6 +131,85 @@ export function connect(next: Session) {
 
 /** After another device took this judge seat, take it back. */
 export function reclaimSeat() {
+  disconnect();
+  open();
+}
+
+// ---- admin login ----
+
+const ADMIN_TOKEN_KEY = 'admin-token';
+let memoryToken = '';
+
+function savedToken(): string {
+  try {
+    return safeStorage()?.getItem(ADMIN_TOKEN_KEY) ?? memoryToken;
+  } catch {
+    return memoryToken;
+  }
+}
+
+function saveToken(token: string) {
+  memoryToken = token;
+  try {
+    if (token) safeStorage()?.setItem(ADMIN_TOKEN_KEY, token);
+    else safeStorage()?.removeItem(ADMIN_TOKEN_KEY);
+  } catch { /* private mode: logged in until the page closes */ }
+}
+
+/** Logs the operator in and reconnects with the new token. */
+export async function loginAdmin(login: string, password: string): Promise<ActionResult> {
+  const body: LoginRequest = { login, password };
+  let res: Response;
+  try {
+    res = await fetch(LOGIN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  } catch {
+    return { ok: false, reason: 'no_connection' };
+  }
+  if (res.status === 401) return { ok: false, reason: 'wrong_login' };
+  if (res.status === 429) return { ok: false, reason: 'too_many_attempts', retryAfterS: Number(res.headers.get('Retry-After')) || undefined };
+  if (!res.ok) return { ok: false, reason: 'server_error' };
+  saveToken(((await res.json()) as LoginResponse).token);
+  if (session.role === 'operator') {
+    disconnect();
+    open();
+  }
+  return { ok: true };
+}
+
+/** Forgets the admin token on this device; the operator's pages lock. */
+export function logoutAdmin() {
+  saveToken('');
+  if (session.role === 'operator') {
+    disconnect();
+    open();
+  }
+}
+
+// ---- judge seat passwords ----
+
+const passwordKey = (seat: number) => `judge-password:${seat}`;
+/** The password the current connection was opened with ('' for none). */
+let triedPassword = '';
+/** Fallback when localStorage is unavailable. */
+const memoryPasswords: Record<number, string> = {};
+
+function savedPassword(seat: number): string {
+  try {
+    return safeStorage()?.getItem(passwordKey(seat)) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** Remembers this seat's password on the device and connects with it ('' tries
+ *  without one, e.g. after the admin removed it). Taps still queued from before
+ *  are sent once the server lets the device in. */
+export function unlockSeat(password: string) {
+  if (session.role !== 'judge' || !session.seat) return;
+  try {
+    safeStorage()?.setItem(passwordKey(session.seat), password);
+  } catch { /* private mode: the password lasts until the page closes */ }
+  memoryPasswords[session.seat] = password;
   disconnect();
   open();
 }
@@ -134,7 +235,15 @@ function disconnect() {
 
 function open() {
   const q = new URLSearchParams({ role: session.role, device: deviceId() });
-  if (session.seat) q.set('seat', String(session.seat));
+  triedPassword = '';
+  if (session.seat) {
+    q.set('seat', String(session.seat));
+    triedPassword = savedPassword(session.seat) || memoryPasswords[session.seat] || '';
+    if (triedPassword) q.set('password', triedPassword);
+  } else if (session.role === 'operator') {
+    triedPassword = savedToken();
+    if (triedPassword) q.set('token', triedPassword);
+  }
   const ws = new WebSocket(`${BASE_URL}?${q}`);
   socket = ws;
   setStatus('connecting');
@@ -161,6 +270,7 @@ function open() {
     stopTimers();
     socket = null;
     if (status === 'replaced') return; // don't fight the other device for the seat
+    if (status === 'locked') return; // the same password would be refused again
     setStatus('closed');
     reconnectTimer = window.setTimeout(open, backoff);
     backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
@@ -197,6 +307,18 @@ function handleFrame(msg: ServerFrame) {
     }
     case 'SESSION_REPLACED':
       setStatus('replaced');
+      break;
+    case 'JUDGE_ACCESS':
+      judgeAccess = msg.payload as JudgeAccessPayload;
+      accessListeners.forEach(cb => cb());
+      break;
+    case 'JUDGE_AUTH_FAILED':
+      retryAfterMs = (msg.payload as JudgeAuthFailedPayload).retry_after_ms ?? 0;
+      setStatus('locked');
+      break;
+    case 'ADMIN_AUTH_FAILED':
+      retryAfterMs = 0;
+      setStatus('locked');
       break;
   }
 }

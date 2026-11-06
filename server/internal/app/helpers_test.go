@@ -26,11 +26,12 @@ func openApp(t *testing.T, dir string, clk clock.Clock) *App {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := New(Options{Store: st, Clock: clk, Rand: mrand.New(mrand.NewSource(1))})
+	a, err := New(Options{Store: st, Clock: clk, Rand: mrand.New(mrand.NewSource(1)), AdminLogin: testAdminLogin, AdminPassword: testAdminPassword})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(a.Close)
+	a.loginDelay = 0 // tests don't wait after failed logins
 	return a
 }
 
@@ -97,4 +98,16 @@ func startMatch(t *testing.T, a *App, catID string, m tournament.Match) {
 func actionOf(typ string, payload any) ws.Action {
 	b, _ := json.Marshal(payload)
 	return ws.Action{Type: typ, Payload: b}
+}
+
+const testAdminLogin, testAdminPassword = "admin", "test-password"
+
+// adminToken logs in as the test admin.
+func adminToken(t *testing.T, a *App) string {
+	t.Helper()
+	tok, ok := a.admin.Login(testAdminLogin, testAdminPassword)
+	if !ok {
+		t.Fatal("test admin can't log in")
+	}
+	return tok
 }

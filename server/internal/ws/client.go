@@ -38,6 +38,8 @@ type Client struct {
 }
 
 // SessionFromQuery reads ?role=judge&seat=2&device=… ; anything else is an operator.
+// A judge's seat password comes separately, as ?password=…, and an operator's
+// admin token as ?token=….
 func SessionFromQuery(r *http.Request) Session {
 	q := r.URL.Query()
 	s := Session{Role: Role(q.Get("role")), Device: q.Get("device")}
@@ -62,7 +64,21 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	c := &Client{hub: h, conn: conn, send: make(chan []byte, 256), session: SessionFromQuery(r)}
+	session := SessionFromQuery(r)
+	q := r.URL.Query()
+	switch session.Role {
+	case RoleJudge:
+		if wait, ok := h.handler.JudgeAllowed(session.Seat, session.Device, q.Get("password")); !ok {
+			h.refuse(conn, TypeJudgeAuthFailed, JudgeAuthFailedPayload{Seat: session.Seat, RetryAfterMs: wait})
+			return
+		}
+	case RoleOperator:
+		if !h.handler.OperatorAllowed(q.Get("token")) {
+			h.refuse(conn, TypeAdminAuthFailed, struct{}{})
+			return
+		}
+	}
+	c := &Client{hub: h, conn: conn, send: make(chan []byte, 256), session: session}
 	h.register <- c
 	// Register first, then send the full state: a broadcast in between is not
 	// lost, and the client keeps whichever state frame has the higher seq.
@@ -71,6 +87,16 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 	go c.writePump()
 	go c.readPump()
+}
+
+// refuse tells a device its password or login isn't valid and closes the
+// connection. The device never joins the hub, so it takes no seat away.
+// Not logged here: the app logs lockouts, not every wrong try.
+func (h *Hub) refuse(conn *websocket.Conn, typ string, payload any) {
+	conn.SetWriteDeadline(time.Now().Add(writeWait))
+	conn.WriteJSON(Frame{Type: typ, Payload: payload, ServerTime: h.now()})
+	conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "wrong password"))
+	conn.Close()
 }
 
 func (c *Client) readPump() {

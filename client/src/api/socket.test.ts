@@ -99,4 +99,107 @@ describe('socket', () => {
     socket.sendAction('START_ROUND');
     expect(ws.queueStatuses()).toEqual([]);
   });
+
+  it('stops reconnecting when the seat password is refused, and keeps the taps', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'judge', seat: 1 });
+    const first = FakeSocket.instances[0];
+    expect(new URL(first.url).searchParams.has('password')).toBe(false);
+    socket.sendAction('REGISTER_HIT', { corner: 'Red' });
+    first.open();
+    first.receive({ type: 'JUDGE_AUTH_FAILED', payload: { seat: 1 } });
+    first.onclose?.();
+
+    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', wrongPassword: false, pending: 1 });
+    vi.advanceTimersByTime(30_000);
+    expect(FakeSocket.instances).toHaveLength(1);
+
+    socket.unlockSeat('4821');
+    const second = FakeSocket.instances[1];
+    expect(new URL(second.url).searchParams.get('password')).toBe('4821');
+    second.open();
+    expect(second.sent.some(f => f.type === 'REGISTER_HIT' && f.offline)).toBe(true);
+  });
+
+  it('remembers the seat password and says when it stops working', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'judge', seat: 2 });
+    socket.unlockSeat('old');
+    const ws = FakeSocket.instances.at(-1)!;
+    expect(new URL(ws.url).searchParams.get('password')).toBe('old');
+    ws.open();
+    ws.receive({ type: 'JUDGE_AUTH_FAILED', payload: { seat: 2 } });
+    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', wrongPassword: true });
+  });
+
+  it('tracks which seats need a password', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'viewer' });
+    const ws = FakeSocket.instances[0];
+    ws.open();
+    ws.receive({ type: 'JUDGE_ACCESS', seq: 1, payload: { protected: [true, false, true] } });
+    expect(socket.getJudgeAccess().protected).toEqual([true, false, true]);
+  });
+
+  it('the judge picker connects as a viewer', async () => {
+    const socket = await loadSocket();
+    expect(socket.sessionForPath('/judge')).toEqual({ role: 'viewer' });
+    expect(socket.sessionForPath('/judge/')).toEqual({ role: 'viewer' });
+    expect(socket.sessionForPath('/judge/2')).toEqual({ role: 'judge', seat: 2 });
+  });
+
+  it('the operator connects with the admin token and locks without one', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'operator' });
+    const first = FakeSocket.instances[0];
+    expect(new URL(first.url).searchParams.has('token')).toBe(false);
+    first.open();
+    first.receive({ type: 'ADMIN_AUTH_FAILED', payload: {} });
+    first.onclose?.();
+    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', wrongPassword: false });
+    vi.advanceTimersByTime(30_000);
+    expect(FakeSocket.instances).toHaveLength(1);
+
+    const fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ token: 'tok-1' }) }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await socket.loginAdmin('admin', 'pw')).toEqual({ ok: true });
+    expect(fetch).toHaveBeenCalledWith('/api/login', expect.objectContaining({ method: 'POST', body: JSON.stringify({ login: 'admin', password: 'pw' }) }));
+    expect(new URL(FakeSocket.instances[1].url).searchParams.get('token')).toBe('tok-1');
+
+    socket.logoutAdmin();
+    expect(new URL(FakeSocket.instances[2].url).searchParams.has('token')).toBe(false);
+  });
+
+  it('a wrong admin login keeps the operator locked', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'operator' });
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 401 })));
+    expect(await socket.loginAdmin('admin', 'nope')).toEqual({ ok: false, reason: 'wrong_login' });
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
+  it('shows how long a seat is locked out after too many wrong passwords', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'judge', seat: 1 });
+    socket.unlockSeat('bad');
+    const ws = FakeSocket.instances.at(-1)!;
+    ws.open();
+    ws.receive({ type: 'JUDGE_AUTH_FAILED', payload: { seat: 1, retry_after_ms: 30_000 } });
+    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', retryAfterMs: 30_000 });
+  });
+
+  it('can retry a seat without a password after it was removed', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'judge', seat: 2 });
+    socket.unlockSeat('old');
+    socket.unlockSeat('');
+    expect(new URL(FakeSocket.instances.at(-1)!.url).searchParams.has('password')).toBe(false);
+  });
+
+  it('reports a locked admin login with its wait', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'operator' });
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 429, headers: new Headers({ 'Retry-After': '30' }) })));
+    expect(await socket.loginAdmin('admin', 'x')).toEqual({ ok: false, reason: 'too_many_attempts', retryAfterS: 30 });
+  });
 });
