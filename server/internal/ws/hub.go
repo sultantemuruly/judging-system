@@ -19,6 +19,9 @@ type Handler interface {
 	SeatsChanged(seats [4]bool)
 	// QueueStatus reports how many actions a judge's device still holds unconfirmed.
 	QueueStatus(s Session, pending int)
+	// JudgeAllowed reports whether password opens a judge seat. It is asked
+	// once per connection, before the connection joins the hub.
+	JudgeAllowed(seat int, password string) bool
 }
 
 // Hub keeps the set of connections and the judge seats. Only its run

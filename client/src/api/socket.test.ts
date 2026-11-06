@@ -99,4 +99,52 @@ describe('socket', () => {
     socket.sendAction('START_ROUND');
     expect(ws.queueStatuses()).toEqual([]);
   });
+
+  it('stops reconnecting when the seat password is refused, and keeps the taps', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'judge', seat: 1 });
+    const first = FakeSocket.instances[0];
+    expect(new URL(first.url).searchParams.has('password')).toBe(false);
+    socket.sendAction('REGISTER_HIT', { corner: 'Red' });
+    first.open();
+    first.receive({ type: 'JUDGE_AUTH_FAILED', payload: { seat: 1 } });
+    first.onclose?.();
+
+    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', wrongPassword: false, pending: 1 });
+    vi.advanceTimersByTime(30_000);
+    expect(FakeSocket.instances).toHaveLength(1);
+
+    socket.unlockSeat('4821');
+    const second = FakeSocket.instances[1];
+    expect(new URL(second.url).searchParams.get('password')).toBe('4821');
+    second.open();
+    expect(second.sent.some(f => f.type === 'REGISTER_HIT' && f.offline)).toBe(true);
+  });
+
+  it('remembers the seat password and says when it stops working', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'judge', seat: 2 });
+    socket.unlockSeat('old');
+    const ws = FakeSocket.instances.at(-1)!;
+    expect(new URL(ws.url).searchParams.get('password')).toBe('old');
+    ws.open();
+    ws.receive({ type: 'JUDGE_AUTH_FAILED', payload: { seat: 2 } });
+    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', wrongPassword: true });
+  });
+
+  it('tracks which seats need a password', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'viewer' });
+    const ws = FakeSocket.instances[0];
+    ws.open();
+    ws.receive({ type: 'JUDGE_ACCESS', seq: 1, payload: { protected: [true, false, true] } });
+    expect(socket.getJudgeAccess().protected).toEqual([true, false, true]);
+  });
+
+  it('the judge picker connects as a viewer', async () => {
+    const socket = await loadSocket();
+    expect(socket.sessionForPath('/judge')).toEqual({ role: 'viewer' });
+    expect(socket.sessionForPath('/judge/')).toEqual({ role: 'viewer' });
+    expect(socket.sessionForPath('/judge/2')).toEqual({ role: 'judge', seat: 2 });
+  });
 });

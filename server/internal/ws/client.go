@@ -38,6 +38,7 @@ type Client struct {
 }
 
 // SessionFromQuery reads ?role=judge&seat=2&device=… ; anything else is an operator.
+// A judge's seat password comes separately, as ?password=….
 func SessionFromQuery(r *http.Request) Session {
 	q := r.URL.Query()
 	s := Session{Role: Role(q.Get("role")), Device: q.Get("device")}
@@ -62,7 +63,12 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	c := &Client{hub: h, conn: conn, send: make(chan []byte, 256), session: SessionFromQuery(r)}
+	session := SessionFromQuery(r)
+	if session.Role == RoleJudge && !h.handler.JudgeAllowed(session.Seat, r.URL.Query().Get("password")) {
+		h.refuse(conn, session)
+		return
+	}
+	c := &Client{hub: h, conn: conn, send: make(chan []byte, 256), session: session}
 	h.register <- c
 	// Register first, then send the full state: a broadcast in between is not
 	// lost, and the client keeps whichever state frame has the higher seq.
@@ -71,6 +77,16 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 	go c.writePump()
 	go c.readPump()
+}
+
+// refuse tells a judge's device its password doesn't open the seat and closes
+// the connection. The device never joins the hub, so it takes no seat away.
+func (h *Hub) refuse(conn *websocket.Conn, s Session) {
+	log.Printf("ws: judge %d refused: wrong password (device %s)", s.Seat, s.Device)
+	conn.SetWriteDeadline(time.Now().Add(writeWait))
+	conn.WriteJSON(Frame{Type: TypeJudgeAuthFailed, Payload: JudgeAuthFailedPayload{Seat: s.Seat}, ServerTime: h.now()})
+	conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "wrong password"))
+	conn.Close()
 }
 
 func (c *Client) readPump() {

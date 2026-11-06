@@ -4,6 +4,7 @@
 //	current_fight           ID of the fight on the ring, so a restart can replay it
 //	heartbeat               "<fightID> <ms>": last moment the round clock was seen running
 //	tournament.json         categories and brackets, replaced atomically on each save
+//	judge_passwords.json    hashed seat passwords of the judges, replaced atomically
 package store
 
 import (
@@ -27,6 +28,7 @@ const (
 	currentFile    = "current_fight"
 	heartbeatFile  = "heartbeat"
 	tournamentFile = "tournament.json"
+	passwordsFile  = "judge_passwords.json"
 )
 
 type Store struct {
@@ -189,6 +191,29 @@ func (s *Store) LoadTournament(v any, legacyPath string) (bool, error) {
 			log.Printf("store: importing %s into %s", legacyPath, s.dir)
 		}
 	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, json.Unmarshal(b, v)
+}
+
+// SaveJudgePasswords writes the judges' seat passwords atomically. They are
+// kept apart from tournament.json, which every device receives.
+func (s *Store) SaveJudgePasswords(v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	return WriteFileAtomic(filepath.Join(s.dir, passwordsFile), b)
+}
+
+// LoadJudgePasswords reads the judges' seat passwords into v; it reports
+// whether there were any saved.
+func (s *Store) LoadJudgePasswords(v any) (bool, error) {
+	b, err := os.ReadFile(filepath.Join(s.dir, passwordsFile))
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}

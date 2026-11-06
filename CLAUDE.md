@@ -19,7 +19,7 @@ go test ./...                     # all tests
 go test ./... -run TestSpec -v    # the spec §10 scenarios
 go test -race ./...               # concurrency changes must pass this
 ```
-The server keeps its data in `DATA_DIR` (default `./data`, gitignored): one JSONL event log per fight, `current_fight`, `heartbeat`, `tournament.json`. On first start it imports an old `tournament_data.json` from the working directory. Run experiments with a scratch `DATA_DIR`, not the repo's.
+The server keeps its data in `DATA_DIR` (default `./data`, gitignored): one JSONL event log per fight, `current_fight`, `heartbeat`, `tournament.json`, `judge_passwords.json` (salted hashes; kept out of `tournament.json` because every device receives that). On first start it imports an old `tournament_data.json` from the working directory. Run experiments with a scratch `DATA_DIR`, not the repo's.
 
 Client (React 19 + TypeScript + Vite 7 + Tailwind 4):
 ```bash
@@ -30,7 +30,7 @@ npm run build    # tsc -b && vite build → client/dist
 npm run lint
 npm test         # vitest
 ```
-The Vite dev server connects to `ws://<host>:8080/ws` directly; the built app always uses the same origin, `ws(s)://<host>/ws`, through nginx (`client/nginx.conf`). The page decides the connection's role: `/judge/N` is judge seat N, `/viewer` a viewer, anything else the operator.
+The Vite dev server connects to `ws://<host>:8080/ws` directly; the built app always uses the same origin, `ws(s)://<host>/ws`, through nginx (`client/nginx.conf`). The page decides the connection's role: `/judge/N` is judge seat N, `/viewer` and the judge picker `/judge` are viewers, anything else the operator.
 
 Docker (`docker-compose.yml`): `docker compose up --build -d`, then open `http://<this machine>/` on every device (`HTTP_PORT` changes the port). nginx serves the client and proxies `/ws` to the server, whose port isn't published. Data lives in the named volume `judging-data` (mounted at `/app/data`), so it survives `docker compose down` and rebuilds; `down -v` deletes it. To import an old `tournament_data.json` into an empty volume: `docker compose create`, `docker compose cp server/tournament_data.json server:/app/data/tournament.json`, `docker compose run --rm --no-deps -u root --entrypoint chown server appuser /app/data/tournament.json` (the copy keeps your host uid, which the server's `appuser` can't read), then `docker compose up -d`.
 
@@ -45,6 +45,7 @@ server/
   internal/ring/            the fight on the ring: validate → append to log → commit → re-arm the 0:00 alarm → notify
   internal/store/           data directory: per-fight JSONL log, heartbeat, atomic tournament.json; recovery reads
   internal/ws/              hub, client pumps, sessions (role/seat/device), seat takeover, ACK/NACK, protocol types
+  internal/access/          judges' seat passwords (salted hashes, check) — pure
   internal/clock/           real and fake clocks, Alarm
   internal/app/             decodes actions, checks roles, links fights to the bracket, broadcasts state
 ```
@@ -69,7 +70,8 @@ client/src/
 - One display component per concept (e.g. the score-difference bar), not copies per page.
 
 Known gaps (pilot scope, spec §0):
-- No PINs/auth: any device can open any page; result correction is "chief judge only" only by being on the bracket screen.
+- Judge seats can have passwords (set under Categories → Judge passwords, `SET_JUDGE_PASSWORD`). The server checks one when a judge's device connects (`?password=`) and answers a wrong one with `JUDGE_AUTH_FAILED` and a close; the phone remembers it in localStorage and stays locked, not reconnecting, until a new one is typed. Queued taps survive the lock. Connected judges are not kicked when a password changes. Spec §0 left PINs out of the pilot; this was added on the club's request.
+- Operator, admin and viewer pages still have no auth: any device can open them (and so change the judges' passwords); result correction is "chief judge only" only by being on the bracket screen.
 - `MatchSchedule.tsx` priorities are hardcoded to one past tournament's categories.
 - Wake Lock needs HTTPS; on plain-HTTP LAN judges must disable auto-lock.
 

@@ -4,6 +4,7 @@ import { type FightView, type TournamentState, emptyFight } from './api/protocol
 import { connect, sessionForPath, subscribeToState, subscribeToTournament } from './api/socket'
 import OperatorScreen from './features/operator/OperatorScreen'
 import JudgeScreen from './features/judge/JudgeScreen'
+import JudgePicker from './features/judge/JudgePicker'
 import ViewerScreen from './features/viewer/ViewerScreen'
 import BracketSetup from './features/tournament/BracketSetup'
 import BracketsPage from './features/tournament/BracketsPage'
@@ -42,6 +43,7 @@ function App() {
       <SessionSync />
       <Routes>
         <Route path="/" element={<OperatorScreen view={state} tournament={tournament} />} />
+        <Route path="/judge" element={<JudgePicker />} />
         <Route path="/judge/:id" element={<JudgeScreen view={state} />} />
         <Route path="/viewer" element={<ViewerScreen view={state} />} />
         <Route path="/tournament/setup" element={<BracketSetup tournament={tournament} />} />
