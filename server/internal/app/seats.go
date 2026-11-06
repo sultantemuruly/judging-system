@@ -9,7 +9,8 @@ import (
 
 // judgeSeats is what the start screen needs before a device picks a judge
 // seat: which seats ask for a password, and which already have a phone on them
-// (taking one disconnects that phone, so the page asks first).
+// (taking one disconnects that phone, so the page asks first). Mirrored by
+// JudgeSeats in client/src/api/protocol.ts.
 type judgeSeats struct {
 	Protected [match.JudgeCount]bool `json:"protected"`
 	Occupied  [match.JudgeCount]bool `json:"occupied"`

@@ -4,7 +4,7 @@
 // (and in localStorage) and resent after a reconnect, so no tap is lost (§9).
 
 import type {
-  AckPayload, ActionFrame, FightView, HelloPayload, JudgeAccessPayload, JudgeAuthFailedPayload, LoginRequest, LoginResponse, NackPayload,
+  AckPayload, ActionFrame, FightView, HelloPayload, JudgeAccessPayload, JudgeAuthFailedPayload, JudgeSeats, LoginRequest, LoginResponse, NackPayload,
   QueueStatusPayload, ServerFrame, Session, TournamentState,
 } from './protocol';
 import { ActionQueue, type QueuedAction } from './queue';
@@ -161,13 +161,6 @@ function saveToken(token: string) {
 }
 
 // ---- judge seats ----
-
-export interface JudgeSeats {
-  /** Seats that ask for a password (index 0 is seat 1). */
-  protected: boolean[];
-  /** Seats with a phone on them now: taking one disconnects that phone. */
-  occupied: boolean[];
-}
 
 const SEATS_TIMEOUT_MS = 1_500;
 

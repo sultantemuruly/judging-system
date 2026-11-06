@@ -1,4 +1,4 @@
-import type { JudgeSeats } from '../api/socket';
+import type { JudgeSeats } from '../api/protocol';
 
 /** What tapping a judge seat does: go straight there, or ask first. */
 export type SeatChoice = 'go' | 'occupied' | 'unknown';
