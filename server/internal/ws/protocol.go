@@ -19,6 +19,9 @@ const (
 	// password it connected with doesn't open its seat; the server then closes
 	// the connection.
 	TypeJudgeAuthFailed = "JUDGE_AUTH_FAILED"
+	// TypeAdminAuthFailed is the only frame an operator page gets when it has
+	// no valid admin token; the server then closes the connection.
+	TypeAdminAuthFailed = "ADMIN_AUTH_FAILED"
 	// TypeJudgeAccess says which judge seats have a password (state frame, has seq).
 	TypeJudgeAccess = "JUDGE_ACCESS"
 )

@@ -38,7 +38,8 @@ type Client struct {
 }
 
 // SessionFromQuery reads ?role=judge&seat=2&device=… ; anything else is an operator.
-// A judge's seat password comes separately, as ?password=….
+// A judge's seat password comes separately, as ?password=…, and an operator's
+// admin token as ?token=….
 func SessionFromQuery(r *http.Request) Session {
 	q := r.URL.Query()
 	s := Session{Role: Role(q.Get("role")), Device: q.Get("device")}
@@ -64,8 +65,13 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := SessionFromQuery(r)
-	if session.Role == RoleJudge && !h.handler.JudgeAllowed(session.Seat, r.URL.Query().Get("password")) {
-		h.refuse(conn, session)
+	q := r.URL.Query()
+	switch {
+	case session.Role == RoleJudge && !h.handler.JudgeAllowed(session.Seat, q.Get("password")):
+		h.refuse(conn, session, TypeJudgeAuthFailed, JudgeAuthFailedPayload{Seat: session.Seat})
+		return
+	case session.Role == RoleOperator && !h.handler.OperatorAllowed(q.Get("token")):
+		h.refuse(conn, session, TypeAdminAuthFailed, struct{}{})
 		return
 	}
 	c := &Client{hub: h, conn: conn, send: make(chan []byte, 256), session: session}
@@ -79,12 +85,12 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	go c.readPump()
 }
 
-// refuse tells a judge's device its password doesn't open the seat and closes
-// the connection. The device never joins the hub, so it takes no seat away.
-func (h *Hub) refuse(conn *websocket.Conn, s Session) {
-	log.Printf("ws: judge %d refused: wrong password (device %s)", s.Seat, s.Device)
+// refuse tells a device its password or login isn't valid and closes the
+// connection. The device never joins the hub, so it takes no seat away.
+func (h *Hub) refuse(conn *websocket.Conn, s Session, typ string, payload any) {
+	log.Printf("ws: %s %d refused: not logged in (device %s)", s.Role, s.Seat, s.Device)
 	conn.SetWriteDeadline(time.Now().Add(writeWait))
-	conn.WriteJSON(Frame{Type: TypeJudgeAuthFailed, Payload: JudgeAuthFailedPayload{Seat: s.Seat}, ServerTime: h.now()})
+	conn.WriteJSON(Frame{Type: typ, Payload: payload, ServerTime: h.now()})
 	conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "wrong password"))
 	conn.Close()
 }

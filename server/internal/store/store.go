@@ -5,10 +5,13 @@
 //	heartbeat               "<fightID> <ms>": last moment the round clock was seen running
 //	tournament.json         categories and brackets, replaced atomically on each save
 //	judge_passwords.json    hashed seat passwords of the judges, replaced atomically
+//	admin_secret            random key that signs admin login tokens
 package store
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +32,7 @@ const (
 	heartbeatFile  = "heartbeat"
 	tournamentFile = "tournament.json"
 	passwordsFile  = "judge_passwords.json"
+	secretFile     = "admin_secret"
 )
 
 type Store struct {
@@ -221,6 +225,31 @@ func (s *Store) LoadJudgePasswords(v any) (bool, error) {
 		return false, err
 	}
 	return true, json.Unmarshal(b, v)
+}
+
+// AdminSecret returns the key that signs admin login tokens, creating it on
+// first use. Keeping it on disk means the operator stays logged in across
+// server restarts.
+func (s *Store) AdminSecret() ([]byte, error) {
+	path := filepath.Join(s.dir, secretFile)
+	b, err := os.ReadFile(path)
+	if err == nil {
+		if key, derr := hex.DecodeString(strings.TrimSpace(string(b))); derr == nil && len(key) >= 32 {
+			return key, nil
+		}
+		return nil, fmt.Errorf("%s is not a valid key; delete it to make a new one (everyone logs in again)", path)
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, err
+	}
+	if err := WriteFileAtomic(path, []byte(hex.EncodeToString(key))); err != nil {
+		return nil, err
+	}
+	return key, nil
 }
 
 // WriteFileAtomic replaces path with data: write a temp file in the same

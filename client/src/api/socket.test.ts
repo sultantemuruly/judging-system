@@ -147,4 +147,34 @@ describe('socket', () => {
     expect(socket.sessionForPath('/judge/')).toEqual({ role: 'viewer' });
     expect(socket.sessionForPath('/judge/2')).toEqual({ role: 'judge', seat: 2 });
   });
+
+  it('the operator connects with the admin token and locks without one', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'operator' });
+    const first = FakeSocket.instances[0];
+    expect(new URL(first.url).searchParams.has('token')).toBe(false);
+    first.open();
+    first.receive({ type: 'ADMIN_AUTH_FAILED', payload: {} });
+    first.onclose?.();
+    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', wrongPassword: false });
+    vi.advanceTimersByTime(30_000);
+    expect(FakeSocket.instances).toHaveLength(1);
+
+    const fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ token: 'tok-1' }) }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await socket.loginAdmin('admin', 'pw')).toEqual({ ok: true });
+    expect(fetch).toHaveBeenCalledWith('/api/login', expect.objectContaining({ method: 'POST', body: JSON.stringify({ login: 'admin', password: 'pw' }) }));
+    expect(new URL(FakeSocket.instances[1].url).searchParams.get('token')).toBe('tok-1');
+
+    socket.logoutAdmin();
+    expect(new URL(FakeSocket.instances[2].url).searchParams.has('token')).toBe(false);
+  });
+
+  it('a wrong admin login keeps the operator locked', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'operator' });
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 401 })));
+    expect(await socket.loginAdmin('admin', 'nope')).toEqual({ ok: false, reason: 'wrong_login' });
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
 });

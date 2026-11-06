@@ -22,6 +22,9 @@ type Handler interface {
 	// JudgeAllowed reports whether password opens a judge seat. It is asked
 	// once per connection, before the connection joins the hub.
 	JudgeAllowed(seat int, password string) bool
+	// OperatorAllowed reports whether token is a valid admin login, asked once
+	// per operator connection before it joins the hub.
+	OperatorAllowed(token string) bool
 }
 
 // Hub keeps the set of connections and the judge seats. Only its run

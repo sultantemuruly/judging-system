@@ -43,6 +43,9 @@ type Options struct {
 	LegacyTournamentFile string
 	// Rand drives the seeding draw.
 	Rand *mrand.Rand
+	// AdminLogin and AdminPassword are the operator/admin account. With no
+	// password nobody can log in, so the operator's pages stay closed.
+	AdminLogin, AdminPassword string
 }
 
 type App struct {
@@ -66,6 +69,8 @@ type App struct {
 
 	recent recentIDs
 
+	admin access.Admin
+
 	// amu guards the judges' seat passwords; nothing else is locked while it is held.
 	amu       sync.Mutex
 	passwords access.Passwords
@@ -81,7 +86,12 @@ func New(opts Options) (*App, error) {
 	if a.rng == nil {
 		a.rng = mrand.New(mrand.NewSource(clock.Ms(opts.Clock.Now())))
 	}
-	// Passwords first: the hub asks for them as soon as a judge connects.
+	secret, err := opts.Store.AdminSecret()
+	if err != nil {
+		return nil, fmt.Errorf("admin secret: %w", err)
+	}
+	a.admin = access.NewAdmin(opts.AdminLogin, opts.AdminPassword, secret)
+	// Passwords first: the hub asks for them as soon as a device connects.
 	if err := a.loadJudgePasswords(); err != nil {
 		return nil, fmt.Errorf("read the judges' passwords: %w", err)
 	}

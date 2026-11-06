@@ -32,7 +32,7 @@ func TestOpenSeatNeedsNoPassword(t *testing.T) {
 
 func TestJudgeNeedsSeatPassword(t *testing.T) {
 	url, _, _ := wsServer(t)
-	op := dial(t, url, "role=operator")
+	op := dialOperator(t, url)
 	setPassword(t, op, "pw-1", 2, "4821")
 
 	for _, q := range []string{"role=judge&seat=2&device=a", "role=judge&seat=2&device=a&password=1111"} {
@@ -54,7 +54,7 @@ func TestJudgeNeedsSeatPassword(t *testing.T) {
 
 func TestRefusedDeviceDoesNotTakeTheSeat(t *testing.T) {
 	url, _, _ := wsServer(t)
-	op := dial(t, url, "role=operator")
+	op := dialOperator(t, url)
 	setPassword(t, op, "pw-1", 1, "4821")
 	judge := dial(t, url, "role=judge&seat=1&device=phone&password=4821")
 	judge.waitState("judge 1 on the seat", func(s stateUpdate) bool { return len(s.Judges) == 3 && s.Judges[0].Connected })
@@ -75,7 +75,7 @@ func TestRefusedDeviceDoesNotTakeTheSeat(t *testing.T) {
 
 func TestJudgeAccessFrameShowsProtectedSeats(t *testing.T) {
 	url, _, _ := wsServer(t)
-	op := dial(t, url, "role=operator")
+	op := dialOperator(t, url)
 	setPassword(t, op, "pw-1", 3, "x")
 	// A device that connects now gets it in its first frames.
 	viewer := dial(t, url, "role=viewer")
@@ -111,7 +111,7 @@ func TestOnlyOperatorSetsPasswords(t *testing.T) {
 
 func TestBadSeatPasswordRejected(t *testing.T) {
 	url, _, _ := wsServer(t)
-	op := dial(t, url, "role=operator")
+	op := dialOperator(t, url)
 	op.send("pw", "SET_JUDGE_PASSWORD", judgePasswordPayload{Seat: 4, Password: "x"})
 	if r := op.result("pw"); r != "bad_seat" {
 		t.Fatalf("seat 4: %q, want bad_seat", r)

@@ -2,12 +2,16 @@
 # nginx serves the app and proxies the WebSocket (/ws) to the server.
 #   docker compose up --build -d
 # Data (fight logs, tournament.json) is kept in the named volume judging-data.
+# The admin login comes from .env next to this file (see .env.example).
 
 services:
   server:
     build: ./server
     container_name: judging-server
     restart: unless-stopped
+    environment:
+      ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env (see .env.example)}
     volumes:
       - judging-data:/app/data
     expose:

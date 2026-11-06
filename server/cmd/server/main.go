@@ -1,7 +1,10 @@
-// Command server runs the judging server: WebSocket at /ws, health at /health.
+// Command server runs the judging server: WebSocket at /ws, admin login at
+// /api/login, health at /health.
 //
-//	PORT      listen port (default 8080)
-//	DATA_DIR  data directory (default ./data)
+//	PORT            listen port (default 8080)
+//	DATA_DIR        data directory (default ./data)
+//	ADMIN_LOGIN     operator/admin login (default admin)
+//	ADMIN_PASSWORD  operator/admin password (required)
 package main
 
 import (
@@ -22,6 +25,11 @@ const legacyTournamentFile = "tournament_data.json"
 func main() {
 	port := env("PORT", "8080")
 	dataDir := env("DATA_DIR", "data")
+	adminLogin := env("ADMIN_LOGIN", "admin")
+	adminPassword := os.Getenv("ADMIN_PASSWORD")
+	if adminPassword == "" {
+		log.Fatal("ADMIN_PASSWORD is not set: without it nobody can open the operator's pages")
+	}
 
 	st, err := store.Open(dataDir)
 	if err != nil {
@@ -32,6 +40,8 @@ func main() {
 		Clock:                clock.Real{},
 		LegacyTournamentFile: legacyTournamentFile,
 		Rand:                 mrand.New(mrand.NewSource(time.Now().UnixNano())),
+		AdminLogin:           adminLogin,
+		AdminPassword:        adminPassword,
 	})
 	if err != nil {
 		log.Fatalf("startup: %v", err)
@@ -44,6 +54,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", a.Hub().ServeWS)
+	mux.HandleFunc("/api/login", a.ServeLogin)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))

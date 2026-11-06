@@ -4,14 +4,15 @@
 // (and in localStorage) and resent after a reconnect, so no tap is lost (§9).
 
 import type {
-  AckPayload, ActionFrame, FightView, JudgeAccessPayload, NackPayload, QueueStatusPayload, ServerFrame, Session,
-  TournamentState,
+  AckPayload, ActionFrame, FightView, JudgeAccessPayload, LoginRequest, LoginResponse, NackPayload, QueueStatusPayload,
+  ServerFrame, Session, TournamentState,
 } from './protocol';
 import { ActionQueue, type QueuedAction } from './queue';
 import { deviceId, newId } from './ids';
 import { addTimeSample, noteServerTime, resetTimeSamples, serverNow } from './serverClock';
 
-/** 'locked': the server refused this judge seat's password; no reconnect until a new one is entered. */
+/** 'locked': the server refused this judge seat's password, or the operator isn't
+ *  logged in; no reconnect until a new password is entered. */
 export type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'replaced' | 'locked';
 
 /** The server's answer to one action: ok, or the NACK reason. */
@@ -26,6 +27,9 @@ export interface ActionResult {
 const BASE_URL = import.meta.env.DEV
   ? `ws://${window.location.hostname}:8080/ws`
   : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
+
+// Admin login: same origin in both modes (Vite proxies /api to the Go server in dev).
+const LOGIN_URL = '/api/login';
 
 const PING_EVERY_MS = 3_000;
 /** No frame for this long means the connection is dead even if the browser hasn't noticed. */
@@ -74,7 +78,7 @@ export interface ConnectionInfo {
   status: ConnectionStatus;
   /** Judge actions made on this device that the server hasn't confirmed yet. */
   pending: number;
-  /** Locked although this device gave a password: it was wrong or has been changed. */
+  /** Locked although this device gave a password (or admin token): it was wrong or has been changed. */
   wrongPassword: boolean;
 }
 
@@ -123,6 +127,55 @@ export function connect(next: Session) {
 export function reclaimSeat() {
   disconnect();
   open();
+}
+
+// ---- admin login ----
+
+const ADMIN_TOKEN_KEY = 'admin-token';
+let memoryToken = '';
+
+function savedToken(): string {
+  try {
+    return safeStorage()?.getItem(ADMIN_TOKEN_KEY) ?? memoryToken;
+  } catch {
+    return memoryToken;
+  }
+}
+
+function saveToken(token: string) {
+  memoryToken = token;
+  try {
+    if (token) safeStorage()?.setItem(ADMIN_TOKEN_KEY, token);
+    else safeStorage()?.removeItem(ADMIN_TOKEN_KEY);
+  } catch { /* private mode: logged in until the page closes */ }
+}
+
+/** Logs the operator in and reconnects with the new token. */
+export async function loginAdmin(login: string, password: string): Promise<ActionResult> {
+  const body: LoginRequest = { login, password };
+  let res: Response;
+  try {
+    res = await fetch(LOGIN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  } catch {
+    return { ok: false, reason: 'no_connection' };
+  }
+  if (res.status === 401) return { ok: false, reason: 'wrong_login' };
+  if (!res.ok) return { ok: false, reason: 'server_error' };
+  saveToken(((await res.json()) as LoginResponse).token);
+  if (session.role === 'operator') {
+    disconnect();
+    open();
+  }
+  return { ok: true };
+}
+
+/** Forgets the admin token on this device; the operator's pages lock. */
+export function logoutAdmin() {
+  saveToken('');
+  if (session.role === 'operator') {
+    disconnect();
+    open();
+  }
 }
 
 // ---- judge seat passwords ----
@@ -179,6 +232,9 @@ function open() {
     q.set('seat', String(session.seat));
     triedPassword = savedPassword(session.seat) || memoryPasswords[session.seat] || '';
     if (triedPassword) q.set('password', triedPassword);
+  } else if (session.role === 'operator') {
+    triedPassword = savedToken();
+    if (triedPassword) q.set('token', triedPassword);
   }
   const ws = new WebSocket(`${BASE_URL}?${q}`);
   socket = ws;
@@ -249,6 +305,7 @@ function handleFrame(msg: ServerFrame) {
       accessListeners.forEach(cb => cb());
       break;
     case 'JUDGE_AUTH_FAILED':
+    case 'ADMIN_AUTH_FAILED':
       setStatus('locked');
       break;
   }

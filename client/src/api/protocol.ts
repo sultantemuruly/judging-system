@@ -243,7 +243,7 @@ export interface ActionFrame {
 /** Server → client. */
 export interface ServerFrame {
   type: 'STATE_UPDATE' | 'TOURNAMENT_STATE_UPDATE' | 'ACK' | 'NACK' | 'TIME_SYNC' | 'SESSION_REPLACED'
-    | 'JUDGE_ACCESS' | 'JUDGE_AUTH_FAILED';
+    | 'JUDGE_ACCESS' | 'JUDGE_AUTH_FAILED' | 'ADMIN_AUTH_FAILED';
   payload: unknown;
   server_time: number;
   seq?: number;
@@ -257,6 +257,16 @@ export interface JudgeAccessPayload {
 /** The only frame a judge's device gets when its password doesn't open the seat. */
 export interface JudgeAuthFailedPayload {
   seat: number;
+}
+
+/** POST /api/login: the admin account; the answer's token opens the operator's pages (?token=). */
+export interface LoginRequest {
+  login: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  token: string;
 }
 
 /** Operator → server: give a judge seat a password; an empty one opens the seat. */
