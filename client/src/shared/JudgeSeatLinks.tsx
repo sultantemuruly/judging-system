@@ -67,7 +67,7 @@ export default function JudgeSeatLinks() {
     // The page moved on meanwhile (e.g. «Главный судья», Back): don't pull it to the seat.
     if (!mounted.current) return;
     setBusySeat(0);
-    const choice = seatChoice(fresh, known, Date.now(), seat);
+    const choice = seatChoice(fresh, known, seat);
     if (choice === 'go') navigate(`/judge/${seat}`);
     else setAsk({ seat, why: choice });
   };

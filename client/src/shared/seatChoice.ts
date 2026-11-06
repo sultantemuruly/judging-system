@@ -18,7 +18,7 @@ export interface KnownSeats {
  * guesses: a phone that goes ahead would take the seat from its judge as soon
  * as it reconnects.
  */
-export function seatChoice(fresh: JudgeSeats | null, known: KnownSeats | null, now: number, seat: number): SeatChoice {
+export function seatChoice(fresh: JudgeSeats | null, known: KnownSeats | null, seat: number, now = Date.now()): SeatChoice {
   const recent = known && now - known.at <= KNOWN_MAX_AGE_MS ? known.seats : null;
   const seats = fresh ?? recent;
   if (!seats) return 'unknown';
