@@ -297,6 +297,13 @@ func (r *Ring) SetSeats(seats [match.JudgeCount + 1]bool) {
 	}
 }
 
+// Seats reports which judge seats (index 1–3) have a live device.
+func (r *Ring) Seats() [match.JudgeCount + 1]bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.seats
+}
+
 // AllSeatsConnected reports whether all three judges are connected (§1).
 func (r *Ring) AllSeatsConnected() bool {
 	r.mu.Lock()

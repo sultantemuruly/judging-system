@@ -13,7 +13,7 @@ Real-time judging system for amateur kickboxing tournaments (Low-kick only, WAKO
 Server (Go, module `judging-server`, Go 1.25):
 ```bash
 cd server
-ADMIN_PASSWORD=… go run ./cmd/server   # http://localhost:8080: /ws, /api/login, /api/logout, /health; PORT, DATA_DIR, ADMIN_LOGIN (default admin), ADMIN_PASSWORD (required)
+ADMIN_PASSWORD=… go run ./cmd/server   # http://localhost:8080: /ws, /api/login, /api/logout, /api/seats, /health; PORT, DATA_DIR, ADMIN_LOGIN (default admin), ADMIN_PASSWORD (required)
 go build ./... && go vet ./...
 go test ./...                     # all tests
 go test ./... -run TestSpec -v    # the spec §10 scenarios
@@ -74,7 +74,7 @@ client/src/
 - One display component per concept (e.g. the score-difference bar), not copies per page.
 
 Known gaps (pilot scope, spec §0):
-- Judge seats can have passwords (set under Categories → Judge passwords, `SET_JUDGE_PASSWORD`). The server checks one when a judge's device connects (in `HELLO`) and answers a wrong one with `JUDGE_AUTH_FAILED` and a close; the phone remembers it in localStorage and stays locked, not reconnecting, until a new one is typed. Queued taps survive the lock. The device that last got onto a seat (its random device ID, saved as `holder` in `judge_passwords.json`) reconnects without a password, also after the password changes or the server restarts, so a judge on the seat is never locked out by a Wi-Fi drop; other devices need the password. 5 wrong passwords lock a seat for 30 s (doubling, max 10 min; `access.Limiter`), but never lock out its holder. Spec §0 left PINs out of the pilot; this was added on the club's request.
+- Judge seats can have passwords (set under Categories → Judge passwords, `SET_JUDGE_PASSWORD`). The server checks one when a judge's device connects (in `HELLO`) and answers a wrong one with `JUDGE_AUTH_FAILED` and a close; the phone remembers it in localStorage and stays locked, not reconnecting, until a new one is typed. Queued taps survive the lock. The device that last got onto a seat (its random device ID, saved as `holder` in `judge_passwords.json`) reconnects without a password, also after the password changes or the server restarts, so a judge on the seat is never locked out by a Wi-Fi drop; other devices need the password. 5 wrong passwords lock a seat for 30 s (doubling, max 10 min; `access.Limiter`), but never lock out its holder. Spec §0 left PINs out of the pilot; this was added on the club's request. The start screen (the locked operator page: «Главный судья» + «Судья 1–3») and `/judge` ask `GET /api/seats` which seats have a password and which have a phone on them, and confirm before taking an occupied seat, since taking it disconnects that phone.
 - Operator/admin pages need the admin login: `POST /api/login` starts a session per device and returns its token; the page connects with it in `HELLO`, and without a live one gets `ADMIN_AUTH_FAILED` and the login screen. A session ends after 12 h unused (each connection renews it), on Log out (`POST /api/logout`), and for every device when the admin login or password changes. Failed logins wait 1 s one after another (not in parallel), and 5 lock the login (429 + `Retry-After`). One shared account, no roles: result correction is "chief judge only" only by being on the bracket screen. Viewer pages are open.
 - `MatchSchedule.tsx` priorities are hardcoded to one past tournament's categories.
 - Wake Lock needs HTTPS; on plain-HTTP LAN judges must disable auto-lock.

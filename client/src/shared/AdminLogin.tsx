@@ -37,7 +37,7 @@ export default function AdminLogin({ expired }: { expired: boolean }) {
 function LoginForm({ expired, onBack }: { expired: boolean; onBack: () => void }) {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState(expired ? 'Logged out: the admin password was changed' : '');
+  const [error, setError] = useState(expired ? 'Session ended, log in again' : '');
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: FormEvent) => {

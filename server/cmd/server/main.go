@@ -1,5 +1,6 @@
 // Command server runs the judging server: WebSocket at /ws, admin login and
-// logout at /api/login and /api/logout, health at /health.
+// logout at /api/login and /api/logout, judge seats at /api/seats, health at
+// /health.
 //
 //	PORT            listen port (default 8080)
 //	DATA_DIR        data directory (default ./data)
@@ -58,6 +59,7 @@ func main() {
 	mux.HandleFunc("/ws", a.Hub().ServeWS)
 	mux.HandleFunc("/api/login", a.ServeLogin)
 	mux.HandleFunc("/api/logout", a.ServeLogout)
+	mux.HandleFunc("/api/seats", a.ServeSeats)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))

@@ -33,8 +33,10 @@ function SessionSync() {
 /** The operator's pages need the admin login; judge and viewer pages don't. */
 function AdminGate({ children }: { children: ReactNode }) {
   const { pathname } = useLocation()
-  const { status, wrongPassword } = useConnection()
-  if (sessionForPath(pathname).role === 'operator' && status === 'locked') {
+  const { session, status, wrongPassword } = useConnection()
+  // Only the operator's own refusal locks the page, not the status a judge or
+  // viewer page left behind just before this one's connection starts.
+  if (sessionForPath(pathname).role === 'operator' && session.role === 'operator' && status === 'locked') {
     return <AdminLogin expired={wrongPassword} />
   }
   return <>{children}</>

@@ -52,6 +52,9 @@ server/tournament_data.json
 .env.*
 !.env.example
 
+# Claude Code: per-user local settings (permissions can hold env values)
+.claude/settings.local.json
+
 # ----------------------------
 # Logs & debug
 # ----------------------------

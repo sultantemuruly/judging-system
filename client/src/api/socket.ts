@@ -78,6 +78,9 @@ let judgeAccess: JudgeAccessPayload = { protected: [false, false, false] };
 export const getJudgeAccess = () => judgeAccess;
 
 export interface ConnectionInfo {
+  /** The connection the status is about. A page checks it is its own: right
+   *  after navigating, the previous page's status is still published. */
+  session: Session;
   status: ConnectionStatus;
   /** Judge actions made on this device that the server hasn't confirmed yet. */
   pending: number;
@@ -88,7 +91,7 @@ export interface ConnectionInfo {
 }
 
 let retryAfterMs = 0;
-let info: ConnectionInfo = { status, pending: 0, wrongPassword: false, retryAfterMs: 0 };
+let info: ConnectionInfo = { session, status, pending: 0, wrongPassword: false, retryAfterMs: 0 };
 export const getConnectionInfo = () => info;
 
 function setStatus(next: ConnectionStatus) {
@@ -101,8 +104,8 @@ function publishInfo() {
   const pending = queue?.size ?? 0;
   const wrongPassword = status === 'locked' && triedPassword !== '';
   const wait = status === 'locked' ? retryAfterMs : 0;
-  if (info.status === status && info.pending === pending && info.wrongPassword === wrongPassword && info.retryAfterMs === wait) return;
-  info = { status, pending, wrongPassword, retryAfterMs: wait };
+  if (info.session === session && info.status === status && info.pending === pending && info.wrongPassword === wrongPassword && info.retryAfterMs === wait) return;
+  info = { session, status, pending, wrongPassword, retryAfterMs: wait };
   statusListeners.forEach(cb => cb());
 }
 
@@ -117,7 +120,7 @@ export function sessionForPath(path: string): Session {
   return { role: 'operator' };
 }
 
-function sameSession(a: Session, b: Session) {
+export function sameSession(a: Session, b: Session) {
   return a.role === b.role && (a.seat ?? 0) === (b.seat ?? 0);
 }
 
@@ -155,6 +158,25 @@ function saveToken(token: string) {
     if (token) safeStorage()?.setItem(ADMIN_TOKEN_KEY, token);
     else safeStorage()?.removeItem(ADMIN_TOKEN_KEY);
   } catch { /* private mode: logged in until the page closes */ }
+}
+
+// ---- judge seats ----
+
+export interface JudgeSeats {
+  /** Seats that ask for a password (index 0 is seat 1). */
+  protected: boolean[];
+  /** Seats with a phone on them now: taking one disconnects that phone. */
+  occupied: boolean[];
+}
+
+/** Asks the server which judge seats are locked and taken; null without a connection. */
+export async function fetchJudgeSeats(): Promise<JudgeSeats | null> {
+  try {
+    const res = await fetch('/api/seats', { cache: 'no-store' });
+    return res.ok ? await res.json() as JudgeSeats : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Logs the operator in and reconnects with the new token. */
