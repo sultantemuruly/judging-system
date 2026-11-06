@@ -169,10 +169,13 @@ export interface JudgeSeats {
   occupied: boolean[];
 }
 
-/** Asks the server which judge seats are locked and taken; null without a connection. */
+const SEATS_TIMEOUT_MS = 1_500;
+
+/** Asks the server which judge seats are locked and taken; null without a
+ *  connection or an answer within 1.5 s (a tap must not hang on bad Wi-Fi). */
 export async function fetchJudgeSeats(): Promise<JudgeSeats | null> {
   try {
-    const res = await fetch('/api/seats', { cache: 'no-store' });
+    const res = await fetch('/api/seats', { cache: 'no-store', signal: AbortSignal.timeout(SEATS_TIMEOUT_MS) });
     return res.ok ? await res.json() as JudgeSeats : null;
   } catch {
     return null;
