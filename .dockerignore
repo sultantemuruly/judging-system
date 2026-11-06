@@ -1,0 +1,10 @@
+# Build context of the root Dockerfile (Fly.io). Never send secrets or data.
+.env
+.env.*
+.git
+**/node_modules
+client/dist
+server/data
+server/judging-server
+server/tournament_data.json
+.claude

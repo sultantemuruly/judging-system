@@ -73,9 +73,13 @@ func tooManyAttempts(w http.ResponseWriter, wait time.Duration) {
 	http.Error(w, "too many failed logins", http.StatusTooManyRequests)
 }
 
-// clientAddr is the device's address: nginx passes it as X-Real-IP, since
-// the connection itself always comes from nginx.
+// clientAddr is the device's address, for the log: Fly.io's proxy passes it as
+// Fly-Client-IP and nginx as X-Real-IP, since the connection itself comes
+// from the proxy.
 func clientAddr(r *http.Request) string {
+	if ip := r.Header.Get("Fly-Client-IP"); ip != "" {
+		return ip
+	}
 	if ip := r.Header.Get("X-Real-IP"); ip != "" {
 		return ip
 	}

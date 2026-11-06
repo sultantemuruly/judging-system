@@ -5,6 +5,7 @@
 //	DATA_DIR        data directory (default ./data)
 //	ADMIN_LOGIN     operator/admin login (default admin)
 //	ADMIN_PASSWORD  operator/admin password (required)
+//	STATIC_DIR      serve the client build from here too (one container, no nginx)
 package main
 
 import (
@@ -17,6 +18,7 @@ import (
 	"judging-server/internal/app"
 	"judging-server/internal/clock"
 	"judging-server/internal/store"
+	"judging-server/internal/web"
 )
 
 // legacyTournamentFile is where tournament data lived before the data directory.
@@ -60,6 +62,9 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
+	if dir := os.Getenv("STATIC_DIR"); dir != "" {
+		mux.Handle("/", web.Static(dir))
+	}
 
 	log.Printf("Server is running at http://localhost:%s (data in %s)", port, dataDir)
 	log.Fatal(http.ListenAndServe(":"+port, mux))
