@@ -34,6 +34,8 @@ The Vite dev server connects to `ws://<host>:8080/ws` directly and proxies `/api
 
 Docker (`docker-compose.yml`): copy `.env.example` to `.env` and set `ADMIN_PASSWORD` (the repo is public: never commit the real one), then `docker compose up --build -d`, then open `http://<this machine>/` on every device (`HTTP_PORT` changes the port). nginx serves the client and proxies `/ws` to the server, whose port isn't published. Data lives in the named volume `judging-data` (mounted at `/app/data`), so it survives `docker compose down` and rebuilds; `down -v` deletes it. To import an old `tournament_data.json` into an empty volume: `docker compose create`, `docker compose cp server/tournament_data.json server:/app/data/tournament.json`, `docker compose run --rm --no-deps -u root --entrypoint chown server appuser /app/data/tournament.json` (the copy keeps your host uid, which the server's `appuser` can't read), then `docker compose up -d`.
 
+Fly.io (online, HTTPS): the root `Dockerfile` builds one image with both halves; the Go server also serves the client build when `STATIC_DIR` is set (`internal/web`), so there is no nginx. `fly.toml` runs exactly one always-on machine (never more: the fight lives in one process) with the volume `judging_data` at `/app/data`; set the password with `fly secrets set ADMIN_PASSWORD=…`. The root `.dockerignore` keeps `.env` and data out of the build.
+
 ## Architecture
 
 Server — pure domain logic separated from I/O:
@@ -47,6 +49,7 @@ server/
   internal/ws/              hub, client pumps, sessions (role/seat/device), seat takeover, ACK/NACK, protocol types
   internal/access/          judges' seat passwords (salted hashes, check) — pure
   internal/clock/           real and fake clocks, Alarm
+  internal/web/             serves the client build when there is no nginx (Fly.io)
   internal/app/             decodes actions, checks roles, links fights to the bracket, broadcasts state
 ```
 - **Server is authoritative.** It owns the clock, computes every score and verdict, and broadcasts a computed `FightView` (`STATE_UPDATE`) and the tournament (`TOURNAMENT_STATE_UPDATE`). Clients never recompute scores. State frames carry `seq` (clients drop older ones) and every frame carries `server_time`.

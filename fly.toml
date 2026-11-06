@@ -1,0 +1,38 @@
+# Fly.io: one machine running the root Dockerfile (client + server).
+#   fly apps create <name>          # then put that name below
+#   fly volumes create judging_data --size 1 --region <region>
+#   fly secrets set ADMIN_PASSWORD=...
+#   fly deploy
+# Exactly one machine: the fight lives in one process and its data volume.
+
+app = "kickboxing-judging"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ADMIN_LOGIN = "admin"
+
+[mounts]
+  source = "judging_data"
+  destination = "/app/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Never sleep: the server runs the round clock and holds the judges' sockets.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "10s"
+    timeout = "3s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
