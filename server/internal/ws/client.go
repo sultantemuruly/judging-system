@@ -3,6 +3,7 @@ package ws
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -19,6 +20,8 @@ const (
 	pingPeriod = 4 * time.Second
 	// MaxMessageSize is the largest action a client may send.
 	MaxMessageSize = 64 * 1024
+	// helloWait: a client that hasn't sent HELLO by then is dropped.
+	helloWait = 5 * time.Second
 )
 
 var upgrader = websocket.Upgrader{
@@ -37,12 +40,11 @@ type Client struct {
 	session Session
 }
 
-// SessionFromQuery reads ?role=judge&seat=2&device=… ; anything else is an operator.
-// A judge's seat password comes separately, as ?password=…, and an operator's
-// admin token as ?token=….
+// SessionFromQuery reads ?role=judge&seat=2 ; anything else is an operator.
+// The device and its credentials come in the HELLO frame.
 func SessionFromQuery(r *http.Request) Session {
 	q := r.URL.Query()
-	s := Session{Role: Role(q.Get("role")), Device: q.Get("device")}
+	s := Session{Role: Role(q.Get("role"))}
 	switch s.Role {
 	case RoleJudge:
 		s.Seat, _ = strconv.Atoi(q.Get("seat"))
@@ -65,15 +67,21 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := SessionFromQuery(r)
-	q := r.URL.Query()
+	hello, err := readHello(conn)
+	if err != nil {
+		log.Printf("ws: %s connection without HELLO: %v", session.Role, err)
+		conn.Close()
+		return
+	}
+	session.Device = hello.Device
 	switch session.Role {
 	case RoleJudge:
-		if wait, ok := h.handler.JudgeAllowed(session.Seat, session.Device, q.Get("password")); !ok {
+		if wait, ok := h.handler.JudgeAllowed(session.Seat, session.Device, hello.Password); !ok {
 			h.refuse(conn, TypeJudgeAuthFailed, JudgeAuthFailedPayload{Seat: session.Seat, RetryAfterMs: wait})
 			return
 		}
 	case RoleOperator:
-		if !h.handler.OperatorAllowed(q.Get("token")) {
+		if !h.handler.OperatorAllowed(hello.Token) {
 			h.refuse(conn, TypeAdminAuthFailed, struct{}{})
 			return
 		}
@@ -87,6 +95,30 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 	go c.writePump()
 	go c.readPump()
+}
+
+// readHello reads the client's first frame, which must be HELLO.
+func readHello(conn *websocket.Conn) (HelloPayload, error) {
+	var p HelloPayload
+	conn.SetReadLimit(MaxMessageSize)
+	conn.SetReadDeadline(time.Now().Add(helloWait))
+	_, data, err := conn.ReadMessage()
+	if err != nil {
+		return p, err
+	}
+	var a Action
+	if err := json.Unmarshal(data, &a); err != nil {
+		return p, err
+	}
+	if a.Type != TypeHello {
+		return p, fmt.Errorf("first frame is %q", a.Type)
+	}
+	if len(a.Payload) > 0 {
+		if err := json.Unmarshal(a.Payload, &p); err != nil {
+			return p, err
+		}
+	}
+	return p, nil
 }
 
 // refuse tells a device its password or login isn't valid and closes the

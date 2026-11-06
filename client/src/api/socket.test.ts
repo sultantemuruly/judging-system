@@ -24,6 +24,11 @@ class FakeSocket {
   // test controls
   open() { this.readyState = FakeSocket.OPEN; this.onopen?.(); }
   receive(frame: object) { this.onmessage?.({ data: JSON.stringify({ server_time: Date.now(), ...frame }) }); }
+  /** The HELLO frame, which must be the first thing sent after opening. */
+  hello() {
+    expect(this.sent[0]?.type).toBe('HELLO');
+    return this.sent[0].payload as { device: string; password?: string; token?: string };
+  }
   queueStatuses() { return this.sent.filter(f => f.type === 'QUEUE_STATUS').map(f => (f.payload as { pending: number }).pending); }
 }
 
@@ -104,9 +109,9 @@ describe('socket', () => {
     const socket = await loadSocket();
     socket.connect({ role: 'judge', seat: 1 });
     const first = FakeSocket.instances[0];
-    expect(new URL(first.url).searchParams.has('password')).toBe(false);
     socket.sendAction('REGISTER_HIT', { corner: 'Red' });
     first.open();
+    expect(first.hello().password).toBeUndefined();
     first.receive({ type: 'JUDGE_AUTH_FAILED', payload: { seat: 1 } });
     first.onclose?.();
 
@@ -116,8 +121,8 @@ describe('socket', () => {
 
     socket.unlockSeat('4821');
     const second = FakeSocket.instances[1];
-    expect(new URL(second.url).searchParams.get('password')).toBe('4821');
     second.open();
+    expect(second.hello().password).toBe('4821');
     expect(second.sent.some(f => f.type === 'REGISTER_HIT' && f.offline)).toBe(true);
   });
 
@@ -126,8 +131,8 @@ describe('socket', () => {
     socket.connect({ role: 'judge', seat: 2 });
     socket.unlockSeat('old');
     const ws = FakeSocket.instances.at(-1)!;
-    expect(new URL(ws.url).searchParams.get('password')).toBe('old');
     ws.open();
+    expect(ws.hello().password).toBe('old');
     ws.receive({ type: 'JUDGE_AUTH_FAILED', payload: { seat: 2 } });
     expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', wrongPassword: true });
   });
@@ -152,8 +157,8 @@ describe('socket', () => {
     const socket = await loadSocket();
     socket.connect({ role: 'operator' });
     const first = FakeSocket.instances[0];
-    expect(new URL(first.url).searchParams.has('token')).toBe(false);
     first.open();
+    expect(first.hello().token).toBeUndefined();
     first.receive({ type: 'ADMIN_AUTH_FAILED', payload: {} });
     first.onclose?.();
     expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', wrongPassword: false });
@@ -164,10 +169,15 @@ describe('socket', () => {
     vi.stubGlobal('fetch', fetch);
     expect(await socket.loginAdmin('admin', 'pw')).toEqual({ ok: true });
     expect(fetch).toHaveBeenCalledWith('/api/login', expect.objectContaining({ method: 'POST', body: JSON.stringify({ login: 'admin', password: 'pw' }) }));
-    expect(new URL(FakeSocket.instances[1].url).searchParams.get('token')).toBe('tok-1');
+    const second = FakeSocket.instances[1];
+    second.open();
+    expect(second.hello().token).toBe('tok-1');
 
     socket.logoutAdmin();
-    expect(new URL(FakeSocket.instances[2].url).searchParams.has('token')).toBe(false);
+    expect(fetch).toHaveBeenLastCalledWith('/api/logout', expect.objectContaining({ method: 'POST', body: JSON.stringify({ token: 'tok-1' }) }));
+    const third = FakeSocket.instances[2];
+    third.open();
+    expect(third.hello().token).toBeUndefined();
   });
 
   it('a wrong admin login keeps the operator locked', async () => {
@@ -193,7 +203,9 @@ describe('socket', () => {
     socket.connect({ role: 'judge', seat: 2 });
     socket.unlockSeat('old');
     socket.unlockSeat('');
-    expect(new URL(FakeSocket.instances.at(-1)!.url).searchParams.has('password')).toBe(false);
+    const ws = FakeSocket.instances.at(-1)!;
+    ws.open();
+    expect(ws.hello().password).toBeUndefined();
   });
 
   it('reports a locked admin login with its wait', async () => {
@@ -201,5 +213,16 @@ describe('socket', () => {
     socket.connect({ role: 'operator' });
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 429, headers: new Headers({ 'Retry-After': '30' }) })));
     expect(await socket.loginAdmin('admin', 'x')).toEqual({ ok: false, reason: 'too_many_attempts', retryAfterS: 30 });
+  });
+
+  it('keeps the device and credentials out of the URL, which proxies log', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'judge', seat: 3 });
+    socket.unlockSeat('4821');
+    const ws = FakeSocket.instances.at(-1)!;
+    expect([...new URL(ws.url).searchParams.keys()].sort()).toEqual(['role', 'seat']);
+    ws.open();
+    expect(ws.hello()).toMatchObject({ password: '4821' });
+    expect(ws.hello().device).toBeTruthy();
   });
 });

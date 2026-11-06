@@ -10,7 +10,7 @@ func TestSessionFromQuery(t *testing.T) {
 		query string
 		want  Session
 	}{
-		{"role=judge&seat=2&device=a", Session{Role: RoleJudge, Seat: 2, Device: "a"}},
+		{"role=judge&seat=2&device=a", Session{Role: RoleJudge, Seat: 2}}, // the device comes in HELLO
 		{"role=judge&seat=4", Session{Role: RoleViewer}},
 		{"role=judge", Session{Role: RoleViewer}},
 		{"role=viewer", Session{Role: RoleViewer}},

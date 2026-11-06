@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"judging-server/internal/access"
+	"judging-server/internal/store"
 	"judging-server/internal/ws"
 )
 
@@ -102,5 +103,57 @@ func TestFailedLoginsWaitOneAfterAnother(t *testing.T) {
 	wg.Wait()
 	if elapsed := time.Since(start); elapsed < 4*a.loginDelay {
 		t.Fatalf("4 parallel wrong logins took %v: the delay isn't shared", elapsed)
+	}
+}
+
+func TestAdminSessionExpiresWhenIdle(t *testing.T) {
+	a, clk, _ := newTestApp(t)
+	tok := adminToken(t, a)
+	clk.Advance(access.SessionIdle - time.Minute)
+	if !a.OperatorAllowed(tok) {
+		t.Fatal("session ended before its idle limit")
+	}
+	clk.Advance(access.SessionIdle - time.Minute) // used just above, so still alive
+	if !a.OperatorAllowed(tok) {
+		t.Fatal("using a session didn't keep it alive")
+	}
+	clk.Advance(access.SessionIdle)
+	if a.OperatorAllowed(tok) {
+		t.Fatal("idle session still works")
+	}
+}
+
+func TestLogoutEndsTheSessionOnTheServer(t *testing.T) {
+	a, clk, dir := newTestApp(t)
+	laptop, tablet := adminToken(t, a), adminToken(t, a)
+	w := httptest.NewRecorder()
+	a.ServeLogout(w, httptest.NewRequest(http.MethodPost, "/api/logout", strings.NewReader(`{"token":"`+laptop+`"}`)))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("logout: %d", w.Code)
+	}
+	if a.OperatorAllowed(laptop) {
+		t.Fatal("token works after logout")
+	}
+	if !a.OperatorAllowed(tablet) {
+		t.Fatal("logout ended another device's session")
+	}
+	a.Close()
+	if openApp(t, dir, clk).OperatorAllowed(laptop) {
+		t.Fatal("logged-out token works again after a restart")
+	}
+}
+
+func TestNewAdminPasswordEndsSessions(t *testing.T) {
+	a, clk, dir := newTestApp(t)
+	tok := adminToken(t, a)
+	a.Close()
+	st, _ := store.Open(dir)
+	b, err := New(Options{Store: st, Clock: clk, AdminLogin: testAdminLogin, AdminPassword: "a-new-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(b.Close)
+	if b.OperatorAllowed(tok) {
+		t.Fatal("a session survived a password change")
 	}
 }

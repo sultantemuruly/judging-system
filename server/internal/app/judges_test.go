@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 
 	"judging-server/internal/access"
 	"judging-server/internal/ws"
@@ -221,5 +224,37 @@ func TestLockedSeatTellsThePhoneHowLong(t *testing.T) {
 	json.Unmarshal(f.Payload.(json.RawMessage), &p)
 	if f.Type != ws.TypeJudgeAuthFailed || p.RetryAfterMs <= 0 {
 		t.Fatalf("lockout frame: %s %+v", f.Type, p)
+	}
+}
+
+// Credentials only count in the HELLO frame; in the URL (which proxies log)
+// they are ignored.
+func TestCredentialsInURLAreIgnored(t *testing.T) {
+	url, _, _ := wsServer(t)
+	op := dialOperator(t, url)
+	setPassword(t, op, "pw", 1, "4821")
+	conn, _, err := websocket.DefaultDialer.Dial(url+"?role=judge&seat=1&password=4821", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	conn.WriteJSON(ws.Action{Type: ws.TypeHello, Payload: json.RawMessage(`{"device":"x"}`)})
+	var f ws.Frame
+	if err := conn.ReadJSON(&f); err != nil || f.Type != ws.TypeJudgeAuthFailed {
+		t.Fatalf("password in the URL opened the seat: %v %s", err, f.Type)
+	}
+}
+
+func TestConnectionWithoutHelloIsDropped(t *testing.T) {
+	url, _, _ := wsServer(t)
+	conn, _, err := websocket.DefaultDialer.Dial(url+"?role=viewer", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	conn.WriteJSON(ws.Action{Type: "TIME_SYNC"})
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("a connection that skipped HELLO got state")
 	}
 }
