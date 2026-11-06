@@ -15,6 +15,10 @@ const (
 	// TypeQueueStatus is sent by a judge's device (no id, no answer) whenever
 	// the number of its taps the server hasn't confirmed changes (§7).
 	TypeQueueStatus = "QUEUE_STATUS"
+	// TypeHello is the first frame every client sends after connecting: who
+	// the device is and its credentials. Nothing secret goes in the URL,
+	// which proxies log.
+	TypeHello = "HELLO"
 	// TypeJudgeAuthFailed is the only frame a judge's device gets when the
 	// password it connected with doesn't open its seat; the server then closes
 	// the connection.
@@ -61,6 +65,14 @@ type NackPayload struct {
 
 type QueueStatusPayload struct {
 	Pending int `json:"pending"`
+}
+
+// HelloPayload: Device is a random ID per browser. A judge gives its seat's
+// Password, the operator's pages their admin session Token.
+type HelloPayload struct {
+	Device   string `json:"device"`
+	Password string `json:"password,omitempty"`
+	Token    string `json:"token,omitempty"`
 }
 
 type JudgeAuthFailedPayload struct {

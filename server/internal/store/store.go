@@ -5,7 +5,8 @@
 //	heartbeat               "<fightID> <ms>": last moment the round clock was seen running
 //	tournament.json         categories and brackets, replaced atomically on each save
 //	judge_passwords.json    hashed seat passwords of the judges, replaced atomically
-//	admin_secret            random key that signs admin login tokens
+//	admin_secret            random key behind the admin account's fingerprint
+//	admin_sessions.json     hashed admin login tokens and when they expire
 package store
 
 import (
@@ -33,6 +34,7 @@ const (
 	tournamentFile = "tournament.json"
 	passwordsFile  = "judge_passwords.json"
 	secretFile     = "admin_secret"
+	sessionsFile   = "admin_sessions.json"
 )
 
 type Store struct {
@@ -215,18 +217,28 @@ func (s *Store) LoadTournament(v any, legacyPath string) (bool, error) {
 
 // SaveJudgePasswords writes the judges' seat passwords atomically. They are
 // kept apart from tournament.json, which every device receives.
-func (s *Store) SaveJudgePasswords(v any) error {
+func (s *Store) SaveJudgePasswords(v any) error { return s.saveJSON(passwordsFile, v) }
+
+// LoadJudgePasswords reads the judges' seat passwords into v; it reports
+// whether there were any saved.
+func (s *Store) LoadJudgePasswords(v any) (bool, error) { return s.loadJSON(passwordsFile, v) }
+
+// SaveAdminSessions writes the admin's login sessions atomically.
+func (s *Store) SaveAdminSessions(v any) error { return s.saveJSON(sessionsFile, v) }
+
+// LoadAdminSessions reads the admin's login sessions into v.
+func (s *Store) LoadAdminSessions(v any) (bool, error) { return s.loadJSON(sessionsFile, v) }
+
+func (s *Store) saveJSON(name string, v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
-	return WriteFileAtomic(filepath.Join(s.dir, passwordsFile), b)
+	return WriteFileAtomic(filepath.Join(s.dir, name), b)
 }
 
-// LoadJudgePasswords reads the judges' seat passwords into v; it reports
-// whether there were any saved.
-func (s *Store) LoadJudgePasswords(v any) (bool, error) {
-	b, err := os.ReadFile(filepath.Join(s.dir, passwordsFile))
+func (s *Store) loadJSON(name string, v any) (bool, error) {
+	b, err := os.ReadFile(filepath.Join(s.dir, name))
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
@@ -236,9 +248,8 @@ func (s *Store) LoadJudgePasswords(v any) (bool, error) {
 	return true, json.Unmarshal(b, v)
 }
 
-// AdminSecret returns the key that signs admin login tokens, creating it on
-// first use. Keeping it on disk means the operator stays logged in across
-// server restarts.
+// AdminSecret returns the key behind the admin account's fingerprint,
+// creating it on first use.
 func (s *Store) AdminSecret() ([]byte, error) {
 	path := filepath.Join(s.dir, secretFile)
 	b, err := os.ReadFile(path)

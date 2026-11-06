@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,6 +41,14 @@ func TestSeatChurnDoesNotDeadlockHub(t *testing.T) {
 	h.hub = NewHub(h, func() int64 { return 0 })
 	go h.hub.Run()
 	srv := httptest.NewServer(http.HandlerFunc(h.hub.ServeWS))
+	// dial connects and says HELLO, as every client must.
+	dial := func(url string) (*websocket.Conn, error) {
+		c, _, err := websocket.DefaultDialer.Dial(url, nil)
+		if err == nil {
+			err = c.WriteJSON(Action{Type: TypeHello, Payload: json.RawMessage(`{"device":"d"}`)})
+		}
+		return c, err
+	}
 	defer srv.Close()
 	url := "ws" + strings.TrimPrefix(srv.URL, "http") + "?role=judge&seat=1"
 
@@ -50,7 +59,7 @@ func TestSeatChurnDoesNotDeadlockHub(t *testing.T) {
 		for range 20 {
 			wg.Go(func() {
 				for range 30 {
-					c, _, err := websocket.DefaultDialer.Dial(url, nil)
+					c, err := dial(url)
 					if err != nil {
 						t.Error(err)
 						return
@@ -71,7 +80,7 @@ func TestSeatChurnDoesNotDeadlockHub(t *testing.T) {
 	}
 
 	// The hub must still deliver: a new viewer receives a broadcast.
-	v, _, err := websocket.DefaultDialer.Dial(strings.Replace(url, "role=judge&seat=1", "role=viewer", 1), nil)
+	v, err := dial(strings.Replace(url, "role=judge&seat=1", "role=viewer", 1))
 	if err != nil {
 		t.Fatal(err)
 	}

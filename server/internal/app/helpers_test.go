@@ -105,9 +105,9 @@ const testAdminLogin, testAdminPassword = "admin", "test-password"
 // adminToken logs in as the test admin.
 func adminToken(t *testing.T, a *App) string {
 	t.Helper()
-	tok, ok := a.admin.Login(testAdminLogin, testAdminPassword)
-	if !ok {
-		t.Fatal("test admin can't log in")
+	tok, err := a.newAdminSession()
+	if err != nil {
+		t.Fatal(err)
 	}
 	return tok
 }

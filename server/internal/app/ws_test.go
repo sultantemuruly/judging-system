@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -47,10 +48,21 @@ type wsConn struct {
 	state  stateUpdate
 }
 
+// dial connects like a client: role and seat in the URL; device, password
+// and token (written in query for brevity) in the HELLO frame.
 func dial(t *testing.T, url, query string) *wsConn {
 	t.Helper()
-	conn, _, err := websocket.DefaultDialer.Dial(url+"?"+query, nil)
+	q, _ := neturl.ParseQuery(query)
+	hello := ws.HelloPayload{Device: q.Get("device"), Password: q.Get("password"), Token: q.Get("token")}
+	for _, k := range []string{"device", "password", "token"} {
+		q.Del(k)
+	}
+	conn, _, err := websocket.DefaultDialer.Dial(url+"?"+q.Encode(), nil)
 	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(hello)
+	if err := conn.WriteJSON(ws.Action{Type: ws.TypeHello, Payload: b}); err != nil {
 		t.Fatal(err)
 	}
 	c := &wsConn{t: t, conn: conn, frames: make(chan ws.Frame, 1024), raw: make(chan json.RawMessage, 1024)}

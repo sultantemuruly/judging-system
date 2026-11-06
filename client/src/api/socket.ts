@@ -4,7 +4,7 @@
 // (and in localStorage) and resent after a reconnect, so no tap is lost (§9).
 
 import type {
-  AckPayload, ActionFrame, FightView, JudgeAccessPayload, JudgeAuthFailedPayload, LoginRequest, LoginResponse, NackPayload,
+  AckPayload, ActionFrame, FightView, HelloPayload, JudgeAccessPayload, JudgeAuthFailedPayload, LoginRequest, LoginResponse, NackPayload,
   QueueStatusPayload, ServerFrame, Session, TournamentState,
 } from './protocol';
 import { ActionQueue, type QueuedAction } from './queue';
@@ -32,6 +32,7 @@ const BASE_URL = import.meta.env.DEV
 
 // Admin login: same origin in both modes (Vite proxies /api to the Go server in dev).
 const LOGIN_URL = '/api/login';
+const LOGOUT_URL = '/api/logout';
 
 const PING_EVERY_MS = 3_000;
 /** No frame for this long means the connection is dead even if the browser hasn't noticed. */
@@ -178,6 +179,12 @@ export async function loginAdmin(login: string, password: string): Promise<Actio
 
 /** Forgets the admin token on this device; the operator's pages lock. */
 export function logoutAdmin() {
+  const token = savedToken();
+  // End the session on the server too, so the token is useless if copied.
+  if (token) {
+    fetch(LOGOUT_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
+      .catch(() => { /* offline: the session still expires when idle */ });
+  }
   saveToken('');
   if (session.role === 'operator') {
     disconnect();
@@ -234,15 +241,18 @@ function disconnect() {
 }
 
 function open() {
-  const q = new URLSearchParams({ role: session.role, device: deviceId() });
+  // Only the role and seat go in the URL, which proxies log; the device and
+  // its credentials go in the HELLO frame, the first thing sent.
+  const q = new URLSearchParams({ role: session.role });
+  const hello: HelloPayload = { device: deviceId() };
   triedPassword = '';
   if (session.seat) {
     q.set('seat', String(session.seat));
     triedPassword = savedPassword(session.seat) || memoryPasswords[session.seat] || '';
-    if (triedPassword) q.set('password', triedPassword);
+    if (triedPassword) hello.password = triedPassword;
   } else if (session.role === 'operator') {
     triedPassword = savedToken();
-    if (triedPassword) q.set('token', triedPassword);
+    if (triedPassword) hello.token = triedPassword;
   }
   const ws = new WebSocket(`${BASE_URL}?${q}`);
   socket = ws;
@@ -250,6 +260,7 @@ function open() {
 
   ws.onopen = () => {
     if (socket !== ws) return;
+    rawSend({ id: '', type: 'HELLO', payload: hello }); // before anything else
     backoff = 500;
     lastFrameAt = Date.now();
     Object.keys(lastSeq).forEach(k => delete lastSeq[k]);

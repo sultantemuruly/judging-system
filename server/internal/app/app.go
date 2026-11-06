@@ -71,6 +71,9 @@ type App struct {
 	recent recentIDs
 
 	admin access.Admin
+	// smu guards the admin's login sessions.
+	smu      sync.Mutex
+	sessions access.Sessions
 
 	// amu guards the judges' seat passwords; nothing else is locked while it is held.
 	amu         sync.Mutex
@@ -99,6 +102,9 @@ func New(opts Options) (*App, error) {
 		return nil, fmt.Errorf("admin secret: %w", err)
 	}
 	a.admin = access.NewAdmin(opts.AdminLogin, opts.AdminPassword, secret)
+	if err := a.loadAdminSessions(); err != nil {
+		return nil, fmt.Errorf("read admin sessions: %w", err)
+	}
 	// Passwords first: the hub asks for them as soon as a device connects.
 	if err := a.loadJudgePasswords(); err != nil {
 		return nil, fmt.Errorf("read the judges' passwords: %w", err)

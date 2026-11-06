@@ -249,6 +249,16 @@ export interface ServerFrame {
   seq?: number;
 }
 
+/** Client → server, the first frame on every connection: the device and its
+ *  credentials (kept out of the URL, which proxies log). */
+export interface HelloPayload {
+  device: string;
+  /** A judge's seat password. */
+  password?: string;
+  /** The operator's admin session token. */
+  token?: string;
+}
+
 /** Which judge seats need a password: protected[0] is seat 1 (state frame, has seq). */
 export interface JudgeAccessPayload {
   protected: [boolean, boolean, boolean];
