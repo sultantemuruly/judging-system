@@ -152,7 +152,8 @@ func (f Fight) Phase() Phase { return f.phase }
 
 // roundAcceptingAt returns the round in which a tap made at t counts: its
 // running time contains t (an open interval counts up to now), or t is at most
-// GongGraceMs after its gong (§3). 0 if none.
+// GongGraceMs after its gong (§3). The grace runs from when the clock last
+// stopped, so a round ended from a pause gives none. 0 if none.
 func (f Fight) roundAcceptingAt(t, now int64) int {
 	for i, r := range f.rounds {
 		for _, iv := range r.Intervals {
@@ -164,8 +165,11 @@ func (f Fight) roundAcceptingAt(t, now int64) int {
 				return i + 1
 			}
 		}
-		if r.EndedAt > 0 && t > r.EndedAt && t <= r.EndedAt+GongGraceMs {
-			return i + 1
+		if r.EndedAt > 0 && len(r.Intervals) > 0 {
+			stoppedAt := r.Intervals[len(r.Intervals)-1].End
+			if r.EndedAt == stoppedAt && t > stoppedAt && t <= stoppedAt+GongGraceMs {
+				return i + 1
+			}
 		}
 	}
 	return 0

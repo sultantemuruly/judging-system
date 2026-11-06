@@ -23,6 +23,10 @@ const (
 	// is at most 5 s before the server received it (and not after); otherwise the
 	// phone's clock is wrong and the receipt time is used (§3).
 	TapClockSkewMs = 5_000
+	// MaxQueuedTapAgeMs — a tap or undo from the offline queue made more than
+	// 15 min before it reached the server is refused: no fight segment is that
+	// long, so the phone's clock must have jumped while it was offline (§3).
+	MaxQueuedTapAgeMs = 15 * 60_000
 
 	// SecondsOutMs — "Seconds out" is signalled 10 s before the rest period ends (§2).
 	SecondsOutMs = 10_000

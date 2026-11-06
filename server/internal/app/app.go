@@ -197,6 +197,10 @@ func (a *App) QueueStatus(s ws.Session, pending int) {
 	a.ring.SetPending(s.Seat, pending)
 }
 
+func (a *App) Heard(s ws.Session) {
+	a.ring.Heard(s.Seat)
+}
+
 var _ ws.Handler = (*App)(nil)
 
 // recentIDs remembers the last action IDs that are not fight events, so a

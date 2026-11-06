@@ -22,6 +22,7 @@ type broadcastingHandler struct {
 func (h *broadcastingHandler) HandleAction(Session, Action) error { return nil }
 func (h *broadcastingHandler) Snapshot() [][]byte                 { return nil }
 func (h *broadcastingHandler) QueueStatus(Session, int)           {}
+func (h *broadcastingHandler) Heard(Session)                      {}
 func (h *broadcastingHandler) SeatsChanged([4]bool) {
 	h.changes.Add(1)
 	time.Sleep(time.Millisecond) // computing the view takes a moment

@@ -19,6 +19,8 @@ type Handler interface {
 	SeatsChanged(seats [4]bool)
 	// QueueStatus reports how many actions a judge's device still holds unconfirmed.
 	QueueStatus(s Session, pending int)
+	// Heard reports that a judge's device sent a frame (proof it is alive).
+	Heard(s Session)
 }
 
 // Hub keeps the set of connections and the judge seats. Only its run

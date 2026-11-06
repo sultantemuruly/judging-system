@@ -53,9 +53,14 @@ type FightLog struct {
 	mu   sync.Mutex
 	f    *os.File
 	size int64 // length of the complete lines in the file
+	// makeCurrent points current_fight at this log; done after the first
+	// event is synced, so a log that never got an event never replaces the
+	// fight on the ring after a restart.
+	makeCurrent func() error
 }
 
-// StartFight opens (or creates) the log of a fight and makes it the current fight.
+// StartFight opens (or creates) the log of a fight. It becomes the current
+// fight once its first event is appended.
 // A torn last line left by a crash is cut off first, so the next event starts
 // on a line of its own.
 func (s *Store) StartFight(id string) (*FightLog, error) {
@@ -67,14 +72,12 @@ func (s *Store) StartFight(id string) (*FightLog, error) {
 	if err == nil {
 		err = f.Truncate(size)
 	}
-	if err == nil {
-		err = WriteFileAtomic(filepath.Join(s.dir, currentFile), []byte(id))
-	}
 	if err != nil {
 		f.Close()
 		return nil, err
 	}
-	return &FightLog{f: f, size: size}, nil
+	current := func() error { return WriteFileAtomic(filepath.Join(s.dir, currentFile), []byte(id)) }
+	return &FightLog{f: f, size: size, makeCurrent: current}, nil
 }
 
 // completeLength is the length of f up to and including its last newline.
@@ -106,6 +109,12 @@ func (l *FightLog) Append(e match.Event) error {
 		return err
 	}
 	l.size += int64(len(line))
+	if l.makeCurrent != nil {
+		if err := l.makeCurrent(); err != nil {
+			return err
+		}
+		l.makeCurrent = nil
+	}
 	return nil
 }
 
