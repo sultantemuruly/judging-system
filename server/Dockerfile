@@ -1,39 +1,39 @@
 # ============================================================
-# Stage 1: Build
+# Stage 1: build the server
 # ============================================================
-FROM golang:1.21-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
-WORKDIR /app
+WORKDIR /src
 
-# Copy dependency files first (layer cache optimization)
+# Dependencies first, so source changes don't refetch them
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
 COPY . .
-
-# Build a statically linked binary (no CGO, no external deps)
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -ldflags="-w -s" -o judging-server .
+# Static binary for the platform Docker builds for (amd64 or arm64)
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o /out/judging-server ./cmd/server
 
 # ============================================================
-# Stage 2: Run
+# Stage 2: run
 # ============================================================
-FROM alpine:3.19
+FROM alpine:3.20
 
-# Add CA certificates (needed for HTTPS outbound calls if ever)
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates \
+ && adduser -D -g '' appuser \
+ && mkdir -p /app/data \
+ && chown appuser /app/data
 
 WORKDIR /app
+COPY --from=builder /out/judging-server .
 
-# Copy only the compiled binary from the builder stage
-COPY --from=builder /app/judging-server .
+# Fight logs, current fight, heartbeat and tournament.json live here.
+# Mount a volume on it; a new named volume takes this directory's owner.
+ENV DATA_DIR=/app/data PORT=8080
+VOLUME /app/data
 
-# Expose the server port
-EXPOSE 8080
-
-# Run as non-root user for security
-RUN adduser -D -g '' appuser
 USER appuser
+EXPOSE 8080
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1
 
 CMD ["./judging-server"]

@@ -12,7 +12,7 @@ Make sure you have the following installed before running the project:
 
 | Tool | Version | Download |
 |------|---------|----------|
-| [Go](https://go.dev/dl/) | 1.21+ | https://go.dev/dl/ |
+| [Go](https://go.dev/dl/) | 1.25+ | https://go.dev/dl/ |
 | [Node.js](https://nodejs.org/) | 18+ | https://nodejs.org/ |
 | npm | comes with Node.js | — |
 
@@ -22,11 +22,9 @@ Make sure you have the following installed before running the project:
 
 ```
 judging-system/
-├── server/          # Go backend (WebSocket + REST API, port 8080)
-│   ├── main.go
-│   ├── store.go
-│   ├── tournament_store.go
-│   └── ...
+├── server/          # Go backend (WebSocket, port 8080)
+│   ├── cmd/server/    # main: config and wiring
+│   └── internal/      # match, tournament, ring, store, ws, clock, app
 └── client/          # React + Vite frontend (port 5173)
     ├── src/
     ├── index.html
@@ -43,8 +41,8 @@ cd server
 # Install dependencies (first time only)
 go mod download
 
-# Run the server
-go run .
+# Run the server (data is kept in ./data; override with DATA_DIR, port with PORT)
+go run ./cmd/server
 ```
 
 The server will start at **http://localhost:8080**
@@ -53,7 +51,7 @@ To verify it's running, open: http://localhost:8080/health — it should return 
 
 > **Build a binary (optional):**
 > ```bash
-> go build -o judging-server.exe .
+> go build -o judging-server.exe ./cmd/server
 > ./judging-server.exe
 > ```
 
@@ -84,7 +82,7 @@ You need **two terminal windows** running simultaneously:
 **Terminal 1 — Server:**
 ```bash
 cd server
-go run .
+go run ./cmd/server
 ```
 
 **Terminal 2 — Client:**
@@ -107,7 +105,7 @@ npm run build
 
 # Build the backend binary
 cd server
-go build -o judging-server.exe .
+go build -o judging-server.exe ./cmd/server
 ```
 
 ---
@@ -126,10 +124,13 @@ go build -o judging-server.exe .
 netstat -ano | findstr :8080
 taskkill /PID <PID> /F
 ```
-# 1. Сначала собери клиент локально
-cd client
-npm run build
+## Docker
 
-# 2. Запусти всё через docker-compose
-cd ..
-docker-compose up --build
+```bash
+docker compose up --build -d
+```
+
+Open `http://<this machine>/` on every device (judges: `/judge/1`, `/judge/2`, `/judge/3`; viewer: `/viewer`).
+nginx serves the client and proxies the WebSocket (`/ws`) to the server; set `HTTP_PORT` to use another port.
+Fight logs and `tournament.json` are kept in the named volume `judging-data`, so they survive
+`docker compose down` and rebuilds (`docker compose down -v` deletes them). See `CLAUDE.md` for importing an old `tournament_data.json`.

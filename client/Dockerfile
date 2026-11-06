@@ -1,16 +1,21 @@
 # ============================================================
-# Lightweight nginx — serves pre-built dist/ only
-# Run "npm run build" locally first, then docker build
+# Stage 1: build the client
+# ============================================================
+FROM node:22-alpine AS build
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# ============================================================
+# Stage 2: nginx serves the build and proxies /ws to the server
 # ============================================================
 FROM nginx:1.27-alpine
 
-# Remove default nginx page
 RUN rm -rf /usr/share/nginx/html/*
-
-# Copy the pre-built Vite output
-COPY dist/ /usr/share/nginx/html/
-
-# Copy nginx config (separate file for clarity and easy editing)
+COPY --from=build /app/dist/ /usr/share/nginx/html/
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

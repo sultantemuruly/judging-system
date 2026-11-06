@@ -1,69 +1,58 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { type MatchState, type TournamentState, connectWebSocket, subscribeToState, subscribeToTournament } from './socket'
-import Dashboard from './Dashboard'
-import JudgeScreen from './JudgeScreen'
-import ViewerScreen from './ViewerScreen'
-import BracketSetup from './BracketSetup'
-import BracketView from './BracketView'
-import AllBracketsView from './AllBracketsView'
-import MatchSchedule from './MatchSchedule'
-
-const defaultState: MatchState = {
-  match_id: '',
-  current_round: 0,
-  rounds: [],
-  match_winner: null,
-  match_result: '',
-  official_warnings: { Red: 0, Blue: 0 },
-  warning_penalties: { Red: 0, Blue: 0 },
-  warning_history: [],
-  disqualified: null,
-  fight_ended: false,
-  red_fighter_name: '',
-  blue_fighter_name: '',
-  category_name: '',
-  rest_end_time: null,
-  round_duration: 0,
-  rest_duration: 0
-}
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from 'react-router-dom'
+import { type FightView, type TournamentState, emptyFight } from './api/protocol'
+import { connect, sessionForPath, subscribeToState, subscribeToTournament } from './api/socket'
+import OperatorScreen from './features/operator/OperatorScreen'
+import JudgeScreen from './features/judge/JudgeScreen'
+import ViewerScreen from './features/viewer/ViewerScreen'
+import BracketSetup from './features/tournament/BracketSetup'
+import BracketsPage from './features/tournament/BracketsPage'
+import MatchSchedule from './features/tournament/MatchSchedule'
+import BracketPrint from './features/tournament/BracketPrint'
 
 const defaultTournament: TournamentState = {
+  name: '',
+  date: '',
   categories: [],
   brackets: {},
   active_match_category_id: '',
   active_match_bracket_match_id: '',
 }
 
+function SessionSync() {
+  const { pathname } = useLocation()
+  useEffect(() => {
+    connect(sessionForPath(pathname))
+  }, [pathname])
+  return null
+}
+
 function App() {
-  const [state, setState] = useState<MatchState>(defaultState)
+  const [state, setState] = useState<FightView>(emptyFight)
   const [tournament, setTournament] = useState<TournamentState>(defaultTournament)
 
   useEffect(() => {
-    connectWebSocket()
-    const unsub1 = subscribeToState((newState) => {
-      setState(newState)
-    })
-    const unsub2 = subscribeToTournament((newState) => {
-      setTournament(newState)
-    })
+    const unsub1 = subscribeToState(setState)
+    const unsub2 = subscribeToTournament(setTournament)
     return () => { unsub1(); unsub2(); }
   }, [])
 
   return (
     <BrowserRouter>
+      <SessionSync />
       <Routes>
-        <Route path="/" element={<Dashboard state={state} tournament={tournament} />} />
-        <Route path="/judge/:id" element={<JudgeScreen state={state} />} />
-        <Route path="/viewer" element={<ViewerScreen state={state} />} />
+        <Route path="/" element={<OperatorScreen view={state} tournament={tournament} />} />
+        <Route path="/judge/:id" element={<JudgeScreen view={state} />} />
+        <Route path="/viewer" element={<ViewerScreen view={state} />} />
         <Route path="/tournament/setup" element={<BracketSetup tournament={tournament} />} />
-        <Route path="/tournament/bracket/:categoryId" element={<BracketView tournament={tournament} />} />
-        <Route path="/tournament/brackets/all" element={<AllBracketsView tournament={tournament} />} />
+        <Route path="/tournament/brackets" element={<BracketsPage tournament={tournament} />} />
+        <Route path="/tournament/brackets/all" element={<Navigate to="/tournament/brackets" replace />} />
+        <Route path="/tournament/bracket/:categoryId" element={<BracketsPage tournament={tournament} />} />
         <Route path="/tournament/schedule" element={<MatchSchedule tournament={tournament} />} />
+        <Route path="/tournament/print/:categoryId" element={<BracketPrint tournament={tournament} />} />
       </Routes>
     </BrowserRouter>
   )
 }
 
 export default App
-
