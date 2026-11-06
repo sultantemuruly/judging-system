@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Smartphone } from 'lucide-react';
-import { fetchJudgeSeats, type JudgeSeats } from '../api/socket';
+import { fetchJudgeSeats } from '../api/socket';
 import ConfirmDialog from './ConfirmDialog';
-import { seatChoice, type SeatChoice } from './seatChoice';
+import { seatChoice, type KnownSeats, type SeatChoice } from './seatChoice';
 
 const seats = [1, 2, 3] as const;
 const REFRESH_MS = 3_000;
@@ -12,13 +12,13 @@ const seatButton =
   'w-full py-8 bg-zinc-800 active:bg-zinc-700 hover:bg-zinc-700 rounded-2xl text-white text-3xl font-black flex items-center justify-center gap-3 touch-manipulation';
 
 /** Which seats are locked and taken, asked again every few seconds while the page is visible. */
-function useJudgeSeats(): JudgeSeats | null {
-  const [state, setState] = useState<JudgeSeats | null>(null);
+function useJudgeSeats(): KnownSeats | null {
+  const [state, setState] = useState<KnownSeats | null>(null);
   useEffect(() => {
     let live = true;
     const load = () => {
       if (document.hidden) return;
-      fetchJudgeSeats().then(s => { if (live && s) setState(s); });
+      fetchJudgeSeats().then(s => { if (live && s) setState({ seats: s, at: Date.now() }); });
     };
     load();
     const timer = window.setInterval(load, REFRESH_MS);
@@ -50,7 +50,12 @@ export default function JudgeSeatLinks() {
   const navigate = useNavigate();
   const [ask, setAsk] = useState<{ seat: number; why: Exclude<SeatChoice, 'go'> } | null>(null);
   const checking = useRef(false);
+  const mounted = useRef(true);
   const [busySeat, setBusySeat] = useState(0);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const pick = async (e: MouseEvent, seat: number) => {
     e.preventDefault();
@@ -59,8 +64,10 @@ export default function JudgeSeatLinks() {
     setBusySeat(seat);
     const fresh = await fetchJudgeSeats(); // the shown state may be 3 s old
     checking.current = false;
+    // The page moved on meanwhile (e.g. «Главный судья», Back): don't pull it to the seat.
+    if (!mounted.current) return;
     setBusySeat(0);
-    const choice = seatChoice(fresh, known, seat);
+    const choice = seatChoice(fresh, known, Date.now(), seat);
     if (choice === 'go') navigate(`/judge/${seat}`);
     else setAsk({ seat, why: choice });
   };
@@ -71,8 +78,8 @@ export default function JudgeSeatLinks() {
         <Link key={seat} to={`/judge/${seat}`} onClick={e => pick(e, seat)} aria-busy={busySeat === seat}
           className={`${seatButton} ${busySeat === seat ? 'opacity-60' : ''}`}>
           Судья {seat}
-          {known?.protected[seat - 1] && <Lock size={22} className="text-zinc-400" aria-label="нужен пароль" />}
-          {known?.occupied[seat - 1] && <Smartphone size={22} className="text-emerald-400" aria-label="уже подключён" />}
+          {known?.seats.protected[seat - 1] && <Lock size={22} className="text-zinc-400" aria-label="нужен пароль" />}
+          {known?.seats.occupied[seat - 1] && <Smartphone size={22} className="text-emerald-400" aria-label="уже подключён" />}
         </Link>
       ))}
       {ask && (

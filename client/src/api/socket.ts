@@ -175,8 +175,15 @@ const SEATS_TIMEOUT_MS = 1_500;
  *  connection or an answer within 1.5 s (a tap must not hang on bad Wi-Fi). */
 export async function fetchJudgeSeats(): Promise<JudgeSeats | null> {
   try {
-    const res = await fetch('/api/seats', { cache: 'no-store', signal: AbortSignal.timeout(SEATS_TIMEOUT_MS) });
-    return res.ok ? await res.json() as JudgeSeats : null;
+    // AbortController + setTimeout rather than AbortSignal.timeout, which iOS 15 lacks.
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), SEATS_TIMEOUT_MS);
+    try {
+      const res = await fetch('/api/seats', { cache: 'no-store', signal: abort.signal });
+      return res.ok ? await res.json() as JudgeSeats : null;
+    } finally {
+      clearTimeout(timer);
+    }
   } catch {
     return null;
   }
