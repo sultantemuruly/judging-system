@@ -67,3 +67,32 @@ func TestSavedFormHasNoPlainPassword(t *testing.T) {
 		t.Fatal("password lost in a save/load round trip")
 	}
 }
+
+func TestHolderKeepsSeatThroughPasswordChanges(t *testing.T) {
+	var p Passwords
+	phone := "0123456789abcdef0123"
+	if !p.SetHolder(1, phone) || p.SetHolder(1, phone) {
+		t.Fatal("SetHolder should report only a change")
+	}
+	p.Set(1, "4821")
+	p.Set(1, "9999")
+	if !p.IsHolder(1, phone) {
+		t.Fatal("a password change dropped the seat's holder")
+	}
+	p.Set(1, "")
+	if !p.IsHolder(1, phone) {
+		t.Fatal("removing the password dropped the seat's holder")
+	}
+	if p.IsHolder(2, phone) || p.IsHolder(1, "other-device-0000000") {
+		t.Fatal("holder recognised on the wrong seat or device")
+	}
+}
+
+func TestWeakDeviceIDsNeverHoldASeat(t *testing.T) {
+	var p Passwords
+	for _, id := range []string{"", "short", "no-storage"} {
+		if p.SetHolder(1, id) || p.IsHolder(1, id) {
+			t.Fatalf("device %q became a holder", id)
+		}
+	}
+}

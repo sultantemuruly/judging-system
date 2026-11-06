@@ -21,8 +21,9 @@ func NewAdmin(login, password string, secret []byte) Admin {
 
 // Login returns the token for the right login and password.
 func (a Admin) Login(login, password string) (string, bool) {
-	okLogin := subtle.ConstantTimeCompare([]byte(login), []byte(a.login)) == 1
-	okPassword := subtle.ConstantTimeCompare([]byte(password), []byte(a.password)) == 1
+	// Compare digests, so the time taken doesn't reveal the lengths.
+	okLogin := equalDigest(login, a.login)
+	okPassword := equalDigest(password, a.password)
 	if !okLogin || !okPassword || a.password == "" {
 		return "", false
 	}
@@ -35,6 +36,14 @@ func (a Admin) Valid(token string) bool {
 		return false
 	}
 	return hmac.Equal([]byte(token), []byte(a.token()))
+}
+
+// LoginMatches reports whether login is the admin login (for logging only).
+func (a Admin) LoginMatches(login string) bool { return equalDigest(login, a.login) }
+
+func equalDigest(x, y string) bool {
+	hx, hy := sha256.Sum256([]byte(x)), sha256.Sum256([]byte(y))
+	return subtle.ConstantTimeCompare(hx[:], hy[:]) == 1
 }
 
 func (a Admin) token() string {

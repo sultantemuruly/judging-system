@@ -4,11 +4,12 @@ import { Lock } from 'lucide-react';
 import { unlockSeat } from '../../api/socket';
 
 /** Shown when the server refused this seat's password: ask for it and connect again. */
-export default function PasswordGate({ seat, wrong }: { seat: number; wrong: boolean }) {
+export default function PasswordGate({ seat, wrong, retryAfterMs }: { seat: number; wrong: boolean; retryAfterMs: number }) {
   const [password, setPassword] = useState('');
+  // An empty password tries again without one: the admin may have removed it.
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (password) unlockSeat(password);
+    unlockSeat(password);
   };
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
@@ -25,10 +26,14 @@ export default function PasswordGate({ seat, wrong }: { seat: number; wrong: boo
           placeholder="Пароль"
           className="w-full px-4 py-4 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-xl text-center placeholder-zinc-500"
         />
-        {wrong && <div className="text-red-400 text-center font-bold">Неверный пароль</div>}
-        <button type="submit" disabled={!password}
-          className="py-4 bg-emerald-600 disabled:opacity-40 text-white text-xl font-black rounded-xl cursor-pointer">
-          Войти
+        {retryAfterMs > 0 ? (
+          <div className="text-red-400 text-center font-bold">
+            Слишком много неверных попыток. Повторите через {Math.ceil(retryAfterMs / 1000)} с
+          </div>
+        ) : wrong && <div className="text-red-400 text-center font-bold">Неверный пароль</div>}
+        <button type="submit"
+          className="py-4 bg-emerald-600 text-white text-xl font-black rounded-xl cursor-pointer">
+          {password ? 'Войти' : 'Повторить без пароля'}
         </button>
         <Link to="/judge" className="text-center text-zinc-500 text-sm">Другое место</Link>
       </form>

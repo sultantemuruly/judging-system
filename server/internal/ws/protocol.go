@@ -65,6 +65,8 @@ type QueueStatusPayload struct {
 
 type JudgeAuthFailedPayload struct {
 	Seat int `json:"seat"`
+	// RetryAfterMs > 0: too many wrong passwords; every try is refused this long.
+	RetryAfterMs int64 `json:"retry_after_ms,omitempty"`
 }
 
 // JudgeAccessPayload: Protected[i] is true when seat i+1 needs a password.

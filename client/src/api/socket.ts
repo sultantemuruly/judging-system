@@ -4,8 +4,8 @@
 // (and in localStorage) and resent after a reconnect, so no tap is lost (§9).
 
 import type {
-  AckPayload, ActionFrame, FightView, JudgeAccessPayload, LoginRequest, LoginResponse, NackPayload, QueueStatusPayload,
-  ServerFrame, Session, TournamentState,
+  AckPayload, ActionFrame, FightView, JudgeAccessPayload, JudgeAuthFailedPayload, LoginRequest, LoginResponse, NackPayload,
+  QueueStatusPayload, ServerFrame, Session, TournamentState,
 } from './protocol';
 import { ActionQueue, type QueuedAction } from './queue';
 import { deviceId, newId } from './ids';
@@ -19,6 +19,8 @@ export type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'replaced' | '
 export interface ActionResult {
   ok: boolean;
   reason?: string;
+  /** Admin login locked out: seconds until the next try is accepted. */
+  retryAfterS?: number;
 }
 
 // The WebSocket URL:
@@ -80,9 +82,12 @@ export interface ConnectionInfo {
   pending: number;
   /** Locked although this device gave a password (or admin token): it was wrong or has been changed. */
   wrongPassword: boolean;
+  /** Locked out after too many wrong passwords: no try is accepted for this many ms (0 if not). */
+  retryAfterMs: number;
 }
 
-let info: ConnectionInfo = { status, pending: 0, wrongPassword: false };
+let retryAfterMs = 0;
+let info: ConnectionInfo = { status, pending: 0, wrongPassword: false, retryAfterMs: 0 };
 export const getConnectionInfo = () => info;
 
 function setStatus(next: ConnectionStatus) {
@@ -94,8 +99,9 @@ function publishInfo() {
   reportQueue();
   const pending = queue?.size ?? 0;
   const wrongPassword = status === 'locked' && triedPassword !== '';
-  if (info.status === status && info.pending === pending && info.wrongPassword === wrongPassword) return;
-  info = { status, pending, wrongPassword };
+  const wait = status === 'locked' ? retryAfterMs : 0;
+  if (info.status === status && info.pending === pending && info.wrongPassword === wrongPassword && info.retryAfterMs === wait) return;
+  info = { status, pending, wrongPassword, retryAfterMs: wait };
   statusListeners.forEach(cb => cb());
 }
 
@@ -160,6 +166,7 @@ export async function loginAdmin(login: string, password: string): Promise<Actio
     return { ok: false, reason: 'no_connection' };
   }
   if (res.status === 401) return { ok: false, reason: 'wrong_login' };
+  if (res.status === 429) return { ok: false, reason: 'too_many_attempts', retryAfterS: Number(res.headers.get('Retry-After')) || undefined };
   if (!res.ok) return { ok: false, reason: 'server_error' };
   saveToken(((await res.json()) as LoginResponse).token);
   if (session.role === 'operator') {
@@ -194,8 +201,9 @@ function savedPassword(seat: number): string {
   }
 }
 
-/** Remembers this seat's password on the device and connects with it. Taps
- *  still queued from before are sent once the server lets the device in. */
+/** Remembers this seat's password on the device and connects with it ('' tries
+ *  without one, e.g. after the admin removed it). Taps still queued from before
+ *  are sent once the server lets the device in. */
 export function unlockSeat(password: string) {
   if (session.role !== 'judge' || !session.seat) return;
   try {
@@ -305,7 +313,11 @@ function handleFrame(msg: ServerFrame) {
       accessListeners.forEach(cb => cb());
       break;
     case 'JUDGE_AUTH_FAILED':
+      retryAfterMs = (msg.payload as JudgeAuthFailedPayload).retry_after_ms ?? 0;
+      setStatus('locked');
+      break;
     case 'ADMIN_AUTH_FAILED':
+      retryAfterMs = 0;
       setStatus('locked');
       break;
   }

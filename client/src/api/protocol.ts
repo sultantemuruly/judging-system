@@ -257,6 +257,8 @@ export interface JudgeAccessPayload {
 /** The only frame a judge's device gets when its password doesn't open the seat. */
 export interface JudgeAuthFailedPayload {
   seat: number;
+  /** > 0: too many wrong passwords; every try is refused this long. */
+  retry_after_ms?: number;
 }
 
 /** POST /api/login: the admin account; the answer's token opens the operator's pages (?token=). */

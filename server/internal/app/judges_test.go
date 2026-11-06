@@ -2,9 +2,11 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
+	"judging-server/internal/access"
 	"judging-server/internal/ws"
 )
 
@@ -125,7 +127,10 @@ func TestPasswordsSurviveRestart(t *testing.T) {
 	}
 	a.Close()
 	b := openApp(t, dir, clk)
-	if !b.JudgeAllowed(1, "4821") || b.JudgeAllowed(1, "") {
+	if _, ok := b.JudgeAllowed(1, "", "4821"); !ok {
+		t.Fatal("seat password lost on restart")
+	}
+	if _, ok := b.JudgeAllowed(1, "", ""); ok {
 		t.Fatal("seat password lost on restart")
 	}
 }
@@ -141,5 +146,80 @@ func TestPasswordsNotInTournamentState(t *testing.T) {
 		if s := string(f.Payload); strings.Contains(s, "4821") || strings.Contains(s, `"hash"`) || strings.Contains(s, `"salt"`) {
 			t.Fatalf("a frame every device gets carries the password: %s", s)
 		}
+	}
+}
+
+const phoneID = "3f2a9c1e-7b4d-4e8a-9f10-2c3d4e5f6a7b"
+
+func TestJudgeOnSeatKeepsItWhenPasswordIsSet(t *testing.T) {
+	url, _, _ := wsServer(t)
+	op := dialOperator(t, url)
+	// The judge joins while the seat is still open...
+	first := dial(t, url, "role=judge&seat=1&device="+phoneID)
+	if refused(first) {
+		t.Fatal("open seat refused")
+	}
+	first.conn.Close()
+	// ...then the admin sets a password, and the phone's Wi-Fi drops.
+	setPassword(t, op, "pw-1", 1, "4821")
+	if refused(dial(t, url, "role=judge&seat=1&device="+phoneID)) {
+		t.Fatal("the judge already on the seat was locked out on reconnect")
+	}
+	if !refused(dial(t, url, "role=judge&seat=1&device=a-different-phone-0000000000")) {
+		t.Fatal("another device got on without the password")
+	}
+	setPassword(t, op, "pw-2", 1, "1111")
+	if refused(dial(t, url, "role=judge&seat=1&device="+phoneID)) {
+		t.Fatal("a password change locked out the judge on the seat")
+	}
+}
+
+func TestSeatHolderSurvivesRestart(t *testing.T) {
+	a, clk, dir := newTestApp(t)
+	a.Do(ws.Action{ID: "pw", Type: "SET_JUDGE_PASSWORD", Payload: json.RawMessage(`{"seat":2,"password":"4821"}`)})
+	if _, ok := a.JudgeAllowed(2, phoneID, "4821"); !ok {
+		t.Fatal("right password refused")
+	}
+	a.Close()
+	if _, ok := openApp(t, dir, clk).JudgeAllowed(2, phoneID, ""); !ok {
+		t.Fatal("after a restart the judge on the seat needs the password again")
+	}
+}
+
+func TestSeatLocksAfterTooManyWrongPasswords(t *testing.T) {
+	a, clk, _ := newTestApp(t)
+	a.Do(ws.Action{ID: "pw", Type: "SET_JUDGE_PASSWORD", Payload: json.RawMessage(`{"seat":1,"password":"4821"}`)})
+	a.JudgeAllowed(1, phoneID, "4821") // the real judge is on the seat
+	for i := 0; i < access.MaxFailures; i++ {
+		a.JudgeAllowed(1, "guesser-device-000000000000", fmt.Sprintf("%04d", i))
+	}
+	wait, ok := a.JudgeAllowed(1, "guesser-device-000000000000", "4821")
+	if ok || wait != access.LockoutBase.Milliseconds() {
+		t.Fatalf("right password during the lockout: ok=%v wait=%d", ok, wait)
+	}
+	if _, ok := a.JudgeAllowed(1, phoneID, ""); !ok {
+		t.Fatal("the lockout shut out the judge already on the seat")
+	}
+	if _, ok := a.JudgeAllowed(2, "guesser-device-000000000000", ""); !ok {
+		t.Fatal("the lockout spread to another seat")
+	}
+	clk.Advance(access.LockoutBase)
+	if _, ok := a.JudgeAllowed(1, "new-phone-00000000000000000", "4821"); !ok {
+		t.Fatal("still locked after the lockout ended")
+	}
+}
+
+func TestLockedSeatTellsThePhoneHowLong(t *testing.T) {
+	url, _, _ := wsServer(t)
+	op := dialOperator(t, url)
+	setPassword(t, op, "pw", 3, "4821")
+	var f ws.Frame
+	for i := 0; i < access.MaxFailures; i++ {
+		f = dial(t, url, "role=judge&seat=3&device=x&password=bad").next("refusal", func(ws.Frame) bool { return true })
+	}
+	var p ws.JudgeAuthFailedPayload
+	json.Unmarshal(f.Payload.(json.RawMessage), &p)
+	if f.Type != ws.TypeJudgeAuthFailed || p.RetryAfterMs <= 0 {
+		t.Fatalf("lockout frame: %s %+v", f.Type, p)
 	}
 }

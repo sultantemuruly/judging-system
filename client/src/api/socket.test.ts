@@ -177,4 +177,29 @@ describe('socket', () => {
     expect(await socket.loginAdmin('admin', 'nope')).toEqual({ ok: false, reason: 'wrong_login' });
     expect(FakeSocket.instances).toHaveLength(1);
   });
+
+  it('shows how long a seat is locked out after too many wrong passwords', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'judge', seat: 1 });
+    socket.unlockSeat('bad');
+    const ws = FakeSocket.instances.at(-1)!;
+    ws.open();
+    ws.receive({ type: 'JUDGE_AUTH_FAILED', payload: { seat: 1, retry_after_ms: 30_000 } });
+    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', retryAfterMs: 30_000 });
+  });
+
+  it('can retry a seat without a password after it was removed', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'judge', seat: 2 });
+    socket.unlockSeat('old');
+    socket.unlockSeat('');
+    expect(new URL(FakeSocket.instances.at(-1)!.url).searchParams.has('password')).toBe(false);
+  });
+
+  it('reports a locked admin login with its wait', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'operator' });
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 429, headers: new Headers({ 'Retry-After': '30' }) })));
+    expect(await socket.loginAdmin('admin', 'x')).toEqual({ ok: false, reason: 'too_many_attempts', retryAfterS: 30 });
+  });
 });

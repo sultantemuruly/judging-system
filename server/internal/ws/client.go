@@ -66,13 +66,17 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 	session := SessionFromQuery(r)
 	q := r.URL.Query()
-	switch {
-	case session.Role == RoleJudge && !h.handler.JudgeAllowed(session.Seat, q.Get("password")):
-		h.refuse(conn, session, TypeJudgeAuthFailed, JudgeAuthFailedPayload{Seat: session.Seat})
-		return
-	case session.Role == RoleOperator && !h.handler.OperatorAllowed(q.Get("token")):
-		h.refuse(conn, session, TypeAdminAuthFailed, struct{}{})
-		return
+	switch session.Role {
+	case RoleJudge:
+		if wait, ok := h.handler.JudgeAllowed(session.Seat, session.Device, q.Get("password")); !ok {
+			h.refuse(conn, TypeJudgeAuthFailed, JudgeAuthFailedPayload{Seat: session.Seat, RetryAfterMs: wait})
+			return
+		}
+	case RoleOperator:
+		if !h.handler.OperatorAllowed(q.Get("token")) {
+			h.refuse(conn, TypeAdminAuthFailed, struct{}{})
+			return
+		}
 	}
 	c := &Client{hub: h, conn: conn, send: make(chan []byte, 256), session: session}
 	h.register <- c
@@ -87,8 +91,8 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 // refuse tells a device its password or login isn't valid and closes the
 // connection. The device never joins the hub, so it takes no seat away.
-func (h *Hub) refuse(conn *websocket.Conn, s Session, typ string, payload any) {
-	log.Printf("ws: %s %d refused: not logged in (device %s)", s.Role, s.Seat, s.Device)
+// Not logged here: the app logs lockouts, not every wrong try.
+func (h *Hub) refuse(conn *websocket.Conn, typ string, payload any) {
 	conn.SetWriteDeadline(time.Now().Add(writeWait))
 	conn.WriteJSON(Frame{Type: typ, Payload: payload, ServerTime: h.now()})
 	conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "wrong password"))

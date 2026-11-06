@@ -20,7 +20,11 @@ export default function AdminLogin({ expired }: { expired: boolean }) {
     setBusy(true);
     const r = await loginAdmin(login, password);
     setBusy(false);
-    if (!r.ok) setError(errors[r.reason ?? ''] ?? `Login failed: ${r.reason}`);
+    if (r.reason === 'too_many_attempts') {
+      setError(`Too many failed logins. Try again in ${r.retryAfterS ?? 30} s`);
+    } else if (!r.ok) {
+      setError(errors[r.reason ?? ''] ?? `Login failed: ${r.reason}`);
+    }
   };
 
   return (

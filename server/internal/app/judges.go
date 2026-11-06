@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"judging-server/internal/access"
@@ -21,11 +22,36 @@ func (a *App) loadJudgePasswords() error {
 	return nil
 }
 
-// JudgeAllowed implements ws.Handler: does password open the seat?
-func (a *App) JudgeAllowed(seat int, password string) bool {
+// JudgeAllowed implements ws.Handler. The device already on the seat gets
+// back on without a password; anyone else needs the seat's password, and
+// after too many wrong ones the seat refuses everyone else for a while.
+func (a *App) JudgeAllowed(seat int, device, password string) (int64, bool) {
+	now := a.clock.Now()
+	key := fmt.Sprintf("seat-%d", seat)
 	a.amu.Lock()
 	defer a.amu.Unlock()
-	return a.passwords.Check(seat, password)
+	if a.passwords.IsHolder(seat, device) {
+		return 0, true
+	}
+	if wait := a.judgeLimits.LockedFor(key, now); wait > 0 {
+		return wait.Milliseconds(), false
+	}
+	if !a.passwords.Check(seat, password) {
+		if wait := a.judgeLimits.Fail(key, now); wait > 0 {
+			log.Printf("judge seat %d: %d wrong passwords, locked for %v", seat, access.MaxFailures, wait)
+			return wait.Milliseconds(), false
+		}
+		return 0, false
+	}
+	a.judgeLimits.Succeed(key)
+	if a.passwords.SetHolder(seat, device) {
+		// Remembered on disk, so the judge also gets back on after a restart.
+		// A failed save only costs that; the judge is let on regardless.
+		if err := a.store.SaveJudgePasswords(a.passwords); err != nil {
+			log.Printf("save judge seat holder: %v", err)
+		}
+	}
+	return 0, true
 }
 
 type judgePasswordPayload struct {
@@ -34,8 +60,8 @@ type judgePasswordPayload struct {
 }
 
 // setJudgePassword (SET_JUDGE_PASSWORD) gives a seat a new password, or opens
-// it with an empty one. Devices already on the seat stay connected; the
-// password is asked the next time a device connects.
+// it with an empty one. The device on the seat keeps it, also when it
+// reconnects; any other device needs the new password.
 func (a *App) setJudgePassword(msg ws.Action) error {
 	var p judgePasswordPayload
 	if err := json.Unmarshal(msg.Payload, &p); err != nil {

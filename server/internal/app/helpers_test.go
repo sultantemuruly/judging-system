@@ -31,6 +31,7 @@ func openApp(t *testing.T, dir string, clk clock.Clock) *App {
 		t.Fatal(err)
 	}
 	t.Cleanup(a.Close)
+	a.loginDelay = 0 // tests don't wait after failed logins
 	return a
 }
 

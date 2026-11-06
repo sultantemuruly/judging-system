@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
+
+	"judging-server/internal/access"
 )
 
-// failedLoginDelay slows down guessing the admin password.
+// failedLoginDelay: each failed admin login holds up the next login attempt this long.
 const failedLoginDelay = time.Second
 
 type loginRequest struct {
@@ -31,15 +34,46 @@ func (a *App) ServeLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	a.loginMu.Lock()
+	defer a.loginMu.Unlock()
+	if wait := a.adminLimits.LockedFor(adminKey, a.clock.Now()); wait > 0 {
+		tooManyAttempts(w, wait)
+		return
+	}
 	token, ok := a.admin.Login(req.Login, req.Password)
 	if !ok {
-		log.Printf("admin: failed login as %q from %s", req.Login, r.RemoteAddr)
-		time.Sleep(failedLoginDelay)
+		// The login itself isn't logged: people type the password there by mistake.
+		log.Printf("admin: failed login (login matched: %v) from %s", a.admin.LoginMatches(req.Login), clientAddr(r))
+		wait := a.adminLimits.Fail(adminKey, a.clock.Now())
+		time.Sleep(a.loginDelay)
+		if wait > 0 {
+			log.Printf("admin: %d failed logins, locked for %v", access.MaxFailures, wait)
+			tooManyAttempts(w, wait)
+			return
+		}
 		http.Error(w, "wrong login or password", http.StatusUnauthorized)
 		return
 	}
+	a.adminLimits.Succeed(adminKey)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(loginResponse{Token: token})
+}
+
+const adminKey = "admin"
+
+// tooManyAttempts answers 429 with how long the admin login is locked.
+func tooManyAttempts(w http.ResponseWriter, wait time.Duration) {
+	w.Header().Set("Retry-After", strconv.Itoa(int((wait+time.Second-1)/time.Second)))
+	http.Error(w, "too many failed logins", http.StatusTooManyRequests)
+}
+
+// clientAddr is the device's address: nginx passes it as X-Real-IP, since
+// the connection itself always comes from nginx.
+func clientAddr(r *http.Request) string {
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return ip
+	}
+	return r.RemoteAddr
 }
 
 // OperatorAllowed implements ws.Handler: is token a valid admin login?

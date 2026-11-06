@@ -13,7 +13,7 @@ export default function JudgePasswords() {
       <div className="px-4 py-3 text-xs font-bold text-zinc-500 uppercase tracking-widest">Judge passwords</div>
       <div className="px-4 pb-4 flex flex-col gap-2">
         {[1, 2, 3].map(seat => <SeatPassword key={seat} seat={seat} isSet={access.protected[seat - 1]} />)}
-        <div className="text-[11px] text-zinc-500">Judges open /judge on their phones. Judges already connected stay connected when a password changes.</div>
+        <div className="text-[11px] text-zinc-500">Judges open /judge on their phones. The phone already on a seat keeps it, also through reconnects, when its password changes; other phones need the new one. 5 wrong passwords lock the seat for 30 s.</div>
       </div>
     </div>
   );

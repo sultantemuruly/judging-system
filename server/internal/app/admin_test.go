@@ -5,8 +5,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"judging-server/internal/access"
 	"judging-server/internal/ws"
 )
 
@@ -66,5 +69,38 @@ func TestAdminStaysLoggedInAcrossRestart(t *testing.T) {
 	a.Close()
 	if !openApp(t, dir, clk).OperatorAllowed(tok) {
 		t.Fatal("restart logged the operator out")
+	}
+}
+
+func TestAdminLoginLocksAfterTooManyFailures(t *testing.T) {
+	a, clk, _ := newTestApp(t)
+	var code int
+	for i := 0; i < access.MaxFailures; i++ {
+		code, _ = login(t, a, `{"login":"admin","password":"guess"}`)
+	}
+	if code != http.StatusTooManyRequests {
+		t.Fatalf("last wrong login: %d, want 429", code)
+	}
+	if code, _ := login(t, a, `{"login":"admin","password":"test-password"}`); code != http.StatusTooManyRequests {
+		t.Fatalf("right password during the lockout: %d, want 429", code)
+	}
+	clk.Advance(access.LockoutBase)
+	if code, _ := login(t, a, `{"login":"admin","password":"test-password"}`); code != http.StatusOK {
+		t.Fatalf("right password after the lockout: %d", code)
+	}
+}
+
+func TestFailedLoginsWaitOneAfterAnother(t *testing.T) {
+	a, _, _ := newTestApp(t)
+	a.loginDelay = 50 * time.Millisecond
+	start := time.Now()
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() { defer wg.Done(); login(t, a, `{"login":"admin","password":"guess"}`) }()
+	}
+	wg.Wait()
+	if elapsed := time.Since(start); elapsed < 4*a.loginDelay {
+		t.Fatalf("4 parallel wrong logins took %v: the delay isn't shared", elapsed)
 	}
 }

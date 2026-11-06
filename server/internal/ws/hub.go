@@ -19,9 +19,11 @@ type Handler interface {
 	SeatsChanged(seats [4]bool)
 	// QueueStatus reports how many actions a judge's device still holds unconfirmed.
 	QueueStatus(s Session, pending int)
-	// JudgeAllowed reports whether password opens a judge seat. It is asked
-	// once per connection, before the connection joins the hub.
-	JudgeAllowed(seat int, password string) bool
+	// JudgeAllowed reports whether the device may take a judge seat with this
+	// password. When it may not because the seat is locked out after too many
+	// wrong passwords, retryAfterMs says for how long. It is asked once per
+	// connection, before the connection joins the hub.
+	JudgeAllowed(seat int, device, password string) (retryAfterMs int64, ok bool)
 	// OperatorAllowed reports whether token is a valid admin login, asked once
 	// per operator connection before it joins the hub.
 	OperatorAllowed(token string) bool

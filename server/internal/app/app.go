@@ -13,6 +13,7 @@ import (
 	mrand "math/rand"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"judging-server/internal/access"
 	"judging-server/internal/clock"
@@ -72,8 +73,15 @@ type App struct {
 	admin access.Admin
 
 	// amu guards the judges' seat passwords; nothing else is locked while it is held.
-	amu       sync.Mutex
-	passwords access.Passwords
+	amu         sync.Mutex
+	passwords   access.Passwords
+	judgeLimits access.Limiter
+
+	// loginMu makes failed admin logins wait one after another, so the delay
+	// after each limits guessing overall, not per request.
+	loginMu     sync.Mutex
+	adminLimits access.Limiter
+	loginDelay  time.Duration
 
 	// Frames are numbered so a client never applies an older state over a newer one.
 	stateMu, tournamentMu, accessMu    sync.Mutex
@@ -82,7 +90,7 @@ type App struct {
 
 // New loads the tournament, restores the fight that was on the ring and starts the hub.
 func New(opts Options) (*App, error) {
-	a := &App{store: opts.Store, clock: opts.Clock, rng: opts.Rand, standalone: match.FightConfig{}.WithDefaults()}
+	a := &App{store: opts.Store, clock: opts.Clock, rng: opts.Rand, standalone: match.FightConfig{}.WithDefaults(), loginDelay: failedLoginDelay}
 	if a.rng == nil {
 		a.rng = mrand.New(mrand.NewSource(clock.Ms(opts.Clock.Now())))
 	}

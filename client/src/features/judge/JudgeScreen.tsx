@@ -44,7 +44,7 @@ export default function JudgeScreen({ view }: Props) {
   const seat = Number(id);
   const me = view.judges.find(j => j.seat === seat);
   const { clock, result } = view;
-  const { status, pending, wrongPassword } = useConnection();
+  const { status, pending, wrongPassword, retryAfterMs } = useConnection();
   const [notice, setNotice] = useState('');
 
   useWakeLock(true);
@@ -65,7 +65,7 @@ export default function JudgeScreen({ view }: Props) {
   }, [notice]);
 
   if (status === 'locked') {
-    return <PasswordGate seat={seat} wrong={wrongPassword} />;
+    return <PasswordGate seat={seat} wrong={wrongPassword} retryAfterMs={retryAfterMs} />;
   }
 
   if (status === 'replaced') {
