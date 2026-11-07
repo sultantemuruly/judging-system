@@ -140,6 +140,22 @@ describe('socket', () => {
     expect(third.hello().token).toBeUndefined();
   });
 
+  it('says the session ended when a saved admin token is refused, and stops reconnecting', async () => {
+    const socket = await loadSocket();
+    socket.connect({ role: 'operator' });
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ token: 'tok-old' }) })));
+    await socket.loginAdmin('admin', 'pw');
+    const ws = FakeSocket.instances.at(-1)!;
+    ws.open();
+    expect(ws.hello().token).toBe('tok-old');
+    ws.receive({ type: 'ADMIN_AUTH_FAILED', payload: {} });
+    ws.onclose?.();
+    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', sessionExpired: true });
+    const count = FakeSocket.instances.length;
+    vi.advanceTimersByTime(30_000);
+    expect(FakeSocket.instances).toHaveLength(count);
+  });
+
   it('a wrong admin login keeps the operator locked', async () => {
     const socket = await loadSocket();
     socket.connect({ role: 'operator' });

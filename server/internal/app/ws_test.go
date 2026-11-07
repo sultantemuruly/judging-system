@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	neturl "net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -463,5 +465,32 @@ func TestConnectionWithoutHelloIsDropped(t *testing.T) {
 	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	if _, _, err := conn.ReadMessage(); err == nil {
 		t.Fatal("a connection that skipped HELLO got state")
+	}
+}
+
+// Judge seats have no passwords any more: a data directory still holding the
+// old judge_passwords.json, and an old cached client still sending a password
+// in HELLO, both let the judge on.
+func TestOldJudgePasswordsAreIgnored(t *testing.T) {
+	dir := t.TempDir()
+	old := `{"seats":[{},{"salt":"00","hash":"deadbeef","holder":"someone-elses-phone-00"},{},{}]}`
+	if err := os.WriteFile(filepath.Join(dir, "judge_passwords.json"), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := openApp(t, dir, clock.NewFake(time.UnixMilli(1_700_000_000_000)))
+	srv := httptest.NewServer(http.HandlerFunc(a.Hub().ServeWS))
+	t.Cleanup(srv.Close)
+	url := "ws" + strings.TrimPrefix(srv.URL, "http")
+
+	conn, _, err := websocket.DefaultDialer.Dial(url+"?role=judge&seat=1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	conn.WriteJSON(ws.Action{Type: ws.TypeHello, Payload: json.RawMessage(`{"device":"a-new-phone-0000000","password":"wrong"}`)})
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	var f ws.Frame
+	if err := conn.ReadJSON(&f); err != nil || f.Type != "STATE_UPDATE" {
+		t.Fatalf("judge refused: %v %s", err, f.Type)
 	}
 }

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { FightView } from '../../api/protocol';
 import { cornerName, resultLabel, winnerTextColor } from '../../shared/fightText';
+import { publicView } from '../../shared/publicView';
 import ActionLog from '../operator/ActionLog';
 import FightClock from '../operator/FightClock';
 import JudgeCards from '../operator/JudgeCards';
@@ -9,9 +10,11 @@ import RefereeActions from '../operator/RefereeActions';
 /**
  * /board: the operator's ring view, read-only and open without a login, for a
  * big screen in the hall. Like /viewer, it names the winner only once the
- * operator has confirmed the result (§7).
+ * operator has confirmed the result (§7): it renders publicView, not the
+ * operator's full view.
  */
-export default function BoardScreen({ view }: { view: FightView }) {
+export default function BoardScreen({ view: full }: { view: FightView }) {
+  const view = publicView(full);
   const { result } = view;
   const showScores = view.live_scores || (result.final && result.confirmed);
   return (

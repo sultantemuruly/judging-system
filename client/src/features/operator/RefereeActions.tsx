@@ -34,8 +34,8 @@ export default function RefereeActions({ view, onFourthWarning, onStopFight }: P
   const warn = (c: Corner) => view.corners[c].next_warning_dq ? onFourthWarning?.(c) : sendAction('OFFICIAL_WARNING', { corner: c });
 
   const cell = (c: Corner, label: string, count: string | number, disabled: boolean, onClick: () => void) => readOnly ? (
-    <div className={`h-12 border rounded-lg flex items-center justify-center px-4 ${tone[c]}`}>
-      <span className="text-white font-black text-2xl tabular-nums">{count}</span>
+    <div className={`h-12 border rounded-lg flex items-center justify-center px-1 sm:px-4 ${tone[c]}`}>
+      <span className="text-white font-black text-lg sm:text-2xl tabular-nums whitespace-nowrap">{count}</span>
     </div>
   ) : (
     <button
@@ -50,11 +50,11 @@ export default function RefereeActions({ view, onFourthWarning, onStopFight }: P
 
   return (
     <div className="w-full bg-zinc-900/80 border border-zinc-800 rounded-xl p-3 flex-shrink-0">
-      <div className="grid grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,1fr))] gap-2 items-center">
-        <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Referee</div>
-        <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Knockdowns <span className="normal-case">(round / fight)</span></div>
-        <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Official warnings</div>
-        <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Minus points (−3)</div>
+      <div className="grid grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,1fr))] gap-1 sm:gap-2 items-center">
+        <div className="text-[9px] sm:text-[11px] font-bold text-zinc-500 uppercase tracking-normal sm:tracking-widest break-words">Referee</div>
+        <div className="text-[9px] sm:text-[11px] font-bold text-zinc-500 uppercase tracking-normal sm:tracking-widest break-words">Knockdowns <span className="normal-case">(round / fight)</span></div>
+        <div className="text-[9px] sm:text-[11px] font-bold text-zinc-500 uppercase tracking-normal sm:tracking-widest break-words">Official warnings</div>
+        <div className="text-[9px] sm:text-[11px] font-bold text-zinc-500 uppercase tracking-normal sm:tracking-widest break-words">Minus points (−3)</div>
         {corners.map(c => {
           const cv = view.corners[c];
           return (

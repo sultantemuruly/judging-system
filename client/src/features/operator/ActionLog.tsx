@@ -1,7 +1,6 @@
 import { Undo2 } from 'lucide-react';
 import type { ActionView, FightView } from '../../api/protocol';
 import { sendAction } from '../../api/socket';
-import { publicActions } from '../../shared/publicActions';
 
 function describe(a: ActionView): string {
   switch (a.type) {
@@ -17,7 +16,7 @@ function describe(a: ActionView): string {
 /** Referee actions of this fight; any of them can be undone until the result
  *  is confirmed (§4), except on the read-only public board. */
 export default function ActionLog({ view, readOnly = false }: { view: FightView; readOnly?: boolean }) {
-  const actions = [...(readOnly ? publicActions(view) : view.actions)].reverse();
+  const actions = [...view.actions].reverse();
   const locked = view.result.confirmed || readOnly;
   return (
     <div className="bg-zinc-900/80 border border-zinc-800 rounded-xl p-3 flex flex-col min-h-0 flex-1">
