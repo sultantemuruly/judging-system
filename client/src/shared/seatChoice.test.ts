@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { KNOWN_MAX_AGE_MS, seatChoice } from './seatChoice';
 
-const seats = (occupied: boolean[]) => ({ protected: [false, false, false], occupied });
+const seats = (occupied: boolean[]) => ({ occupied });
 const now = 1_000_000;
 const shown = (occupied: boolean[], ageMs = 0) => ({ seats: seats(occupied), at: now - ageMs });
 

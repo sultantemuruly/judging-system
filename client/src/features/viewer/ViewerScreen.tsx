@@ -3,12 +3,15 @@ import { AlertTriangle, Shield } from 'lucide-react';
 import ScoreDiffBar from '../../shared/ScoreDiffBar';
 import { useCountdown, useRemaining } from '../../shared/useCountdown';
 import { cornerName, formatMs, penaltySummary, resultBannerStyle, resultLabel, winnerTextColor } from '../../shared/fightText';
+import { publicView } from '../../shared/publicView';
 
 interface Props {
   view: FightView;
 }
 
-export default function ViewerScreen({ view }: Props) {
+export default function ViewerScreen({ view: full }: Props) {
+  // The winner is shown only after the operator confirms (§7): render the public view.
+  const view = publicView(full);
   const { clock, corners, result, medical } = view;
   const { remainingMs, isRest, secondsOut } = useCountdown(clock);
   const medicalLeft = useRemaining(medical.active ? medical.ends_at : 0, 120_000);

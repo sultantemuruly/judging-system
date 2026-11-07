@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { ArrowLeft, Lock } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArrowLeft, Lock, Monitor } from 'lucide-react';
 import { loginAdmin } from '../api/socket';
 import JudgeSeatLinks from './JudgeSeatLinks';
 
@@ -12,7 +13,7 @@ const errors: Record<string, string> = {
 /**
  * Shown instead of the operator's pages until the admin logs in. It starts
  * with the four roles: the main judge logs in here, a side judge goes to
- * their seat.
+ * their seat; anyone can open the scoreboard (/board) without a login.
  */
 export default function AdminLogin({ expired }: { expired: boolean }) {
   const [loggingIn, setLoggingIn] = useState(expired);
@@ -28,6 +29,9 @@ export default function AdminLogin({ expired }: { expired: boolean }) {
                 <Lock size={22} className="text-emerald-200" aria-label="нужен вход" />
               </button>
               <JudgeSeatLinks />
+              <Link to="/board" className="w-full py-4 mt-2 border border-zinc-800 hover:bg-zinc-900 rounded-2xl text-zinc-300 text-xl font-black flex items-center justify-center gap-3 touch-manipulation">
+                <Monitor size={20} /> Табло
+              </Link>
             </>}
       </div>
     </div>

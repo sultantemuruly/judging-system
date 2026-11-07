@@ -243,7 +243,7 @@ export interface ActionFrame {
 /** Server → client. */
 export interface ServerFrame {
   type: 'STATE_UPDATE' | 'TOURNAMENT_STATE_UPDATE' | 'ACK' | 'NACK' | 'TIME_SYNC' | 'SESSION_REPLACED'
-    | 'JUDGE_ACCESS' | 'JUDGE_AUTH_FAILED' | 'ADMIN_AUTH_FAILED';
+    | 'ADMIN_AUTH_FAILED';
   payload: unknown;
   server_time: number;
   seq?: number;
@@ -253,22 +253,8 @@ export interface ServerFrame {
  *  credentials (kept out of the URL, which proxies log). */
 export interface HelloPayload {
   device: string;
-  /** A judge's seat password. */
-  password?: string;
   /** The operator's admin session token. */
   token?: string;
-}
-
-/** Which judge seats need a password: protected[0] is seat 1 (state frame, has seq). */
-export interface JudgeAccessPayload {
-  protected: [boolean, boolean, boolean];
-}
-
-/** The only frame a judge's device gets when its password doesn't open the seat. */
-export interface JudgeAuthFailedPayload {
-  seat: number;
-  /** > 0: too many wrong passwords; every try is refused this long. */
-  retry_after_ms?: number;
 }
 
 /** POST /api/login: the admin account; the answer's token opens the operator's pages (?token=). */
@@ -283,16 +269,8 @@ export interface LoginResponse {
 
 /** GET /api/seats (Go app.judgeSeats): what a device needs before picking a judge seat. */
 export interface JudgeSeats {
-  /** Seats that ask for a password (index 0 is seat 1). */
-  protected: boolean[];
   /** Seats with a phone on them now: taking one disconnects that phone. */
   occupied: boolean[];
-}
-
-/** Operator → server: give a judge seat a password; an empty one opens the seat. */
-export interface SetJudgePasswordPayload {
-  seat: number;
-  password: string;
 }
 
 export interface AckPayload {

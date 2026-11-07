@@ -4,7 +4,6 @@ import { reclaimSeat, sameSession, sendAction, subscribeToResults } from '../../
 import type { Corner, FightView, Phase } from '../../api/protocol';
 import { useConnection } from '../../shared/useConnection';
 import { useWakeLock } from './useWakeLock';
-import PasswordGate from './PasswordGate';
 import { Undo2, WifiOff } from 'lucide-react';
 
 interface Props {
@@ -48,7 +47,7 @@ export default function JudgeScreen({ view }: Props) {
   const connection = useConnection();
   // Until this page's own connection starts, the status is the previous page's.
   const mine = sameSession(connection.session, { role: 'judge', seat });
-  const { pending, wrongPassword, retryAfterMs } = connection;
+  const { pending } = connection;
   const status = mine ? connection.status : 'connecting';
   const [notice, setNotice] = useState('');
 
@@ -68,10 +67,6 @@ export default function JudgeScreen({ view }: Props) {
     const t = window.setTimeout(() => setNotice(''), 3000);
     return () => clearTimeout(t);
   }, [notice]);
-
-  if (status === 'locked') {
-    return <PasswordGate seat={seat} wrong={wrongPassword} retryAfterMs={retryAfterMs} />;
-  }
 
   if (status === 'replaced') {
     return (

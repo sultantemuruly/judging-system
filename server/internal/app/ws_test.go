@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	neturl "net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -48,13 +50,13 @@ type wsConn struct {
 	state  stateUpdate
 }
 
-// dial connects like a client: role and seat in the URL; device, password
-// and token (written in query for brevity) in the HELLO frame.
+// dial connects like a client: role and seat in the URL; device and token
+// (written in query for brevity) in the HELLO frame.
 func dial(t *testing.T, url, query string) *wsConn {
 	t.Helper()
 	q, _ := neturl.ParseQuery(query)
-	hello := ws.HelloPayload{Device: q.Get("device"), Password: q.Get("password"), Token: q.Get("token")}
-	for _, k := range []string{"device", "password", "token"} {
+	hello := ws.HelloPayload{Device: q.Get("device"), Token: q.Get("token")}
+	for _, k := range []string{"device", "token"} {
 		q.Del(k)
 	}
 	conn, _, err := websocket.DefaultDialer.Dial(url+"?"+q.Encode(), nil)
@@ -432,5 +434,63 @@ func TestConfirmWaitsForJudgesSilentSinceTheEnd(t *testing.T) {
 	op.send("c2", "CONFIRM_RESULT", nil)
 	if r := op.result("c2"); r != "" {
 		t.Fatalf("confirm once every judge was heard: NACK %q", r)
+	}
+}
+
+// The admin token only counts in the HELLO frame; in the URL (which proxies
+// log) it is ignored.
+func TestTokenInURLIsIgnored(t *testing.T) {
+	url, a, _ := wsServer(t)
+	_, tok := login(t, a, `{"login":"`+testAdminLogin+`","password":"`+testAdminPassword+`"}`)
+	conn, _, err := websocket.DefaultDialer.Dial(url+"?role=operator&token="+tok, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	conn.WriteJSON(ws.Action{Type: ws.TypeHello, Payload: json.RawMessage(`{"device":"x"}`)})
+	var f ws.Frame
+	if err := conn.ReadJSON(&f); err != nil || f.Type != ws.TypeAdminAuthFailed {
+		t.Fatalf("token in the URL opened the operator's pages: %v %s", err, f.Type)
+	}
+}
+
+func TestConnectionWithoutHelloIsDropped(t *testing.T) {
+	url, _, _ := wsServer(t)
+	conn, _, err := websocket.DefaultDialer.Dial(url+"?role=viewer", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	conn.WriteJSON(ws.Action{Type: "TIME_SYNC"})
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("a connection that skipped HELLO got state")
+	}
+}
+
+// Judge seats have no passwords any more: a data directory still holding the
+// old judge_passwords.json, and an old cached client still sending a password
+// in HELLO, both let the judge on.
+func TestOldJudgePasswordsAreIgnored(t *testing.T) {
+	dir := t.TempDir()
+	old := `{"seats":[{},{"salt":"00","hash":"deadbeef","holder":"someone-elses-phone-00"},{},{}]}`
+	if err := os.WriteFile(filepath.Join(dir, "judge_passwords.json"), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := openApp(t, dir, clock.NewFake(time.UnixMilli(1_700_000_000_000)))
+	srv := httptest.NewServer(http.HandlerFunc(a.Hub().ServeWS))
+	t.Cleanup(srv.Close)
+	url := "ws" + strings.TrimPrefix(srv.URL, "http")
+
+	conn, _, err := websocket.DefaultDialer.Dial(url+"?role=judge&seat=1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	conn.WriteJSON(ws.Action{Type: ws.TypeHello, Payload: json.RawMessage(`{"device":"a-new-phone-0000000","password":"wrong"}`)})
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	var f ws.Frame
+	if err := conn.ReadJSON(&f); err != nil || f.Type != "STATE_UPDATE" {
+		t.Fatalf("judge refused: %v %s", err, f.Type)
 	}
 }

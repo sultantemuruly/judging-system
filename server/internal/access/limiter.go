@@ -10,7 +10,7 @@ const (
 	LockoutMax  = 10 * time.Minute
 )
 
-// Limiter counts wrong passwords per key (a seat, or the admin account) and
+// Limiter counts wrong passwords per key (the admin account) and
 // locks the key out after too many. The zero value is ready; not safe for
 // concurrent use. Time is passed in, so tests are deterministic.
 type Limiter struct {

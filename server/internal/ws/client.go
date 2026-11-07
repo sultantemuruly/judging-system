@@ -74,13 +74,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session.Device = hello.Device
-	switch session.Role {
-	case RoleJudge:
-		if wait, ok := h.handler.JudgeAllowed(session.Seat, session.Device, hello.Password); !ok {
-			h.refuse(conn, TypeJudgeAuthFailed, JudgeAuthFailedPayload{Seat: session.Seat, RetryAfterMs: wait})
-			return
-		}
-	case RoleOperator:
+	if session.Role == RoleOperator {
 		if !h.handler.OperatorAllowed(hello.Token) {
 			h.refuse(conn, TypeAdminAuthFailed, struct{}{})
 			return
@@ -121,13 +115,13 @@ func readHello(conn *websocket.Conn) (HelloPayload, error) {
 	return p, nil
 }
 
-// refuse tells a device its password or login isn't valid and closes the
-// connection. The device never joins the hub, so it takes no seat away.
+// refuse tells a device its admin login isn't valid and closes the
+// connection. The device never joins the hub.
 // Not logged here: the app logs lockouts, not every wrong try.
 func (h *Hub) refuse(conn *websocket.Conn, typ string, payload any) {
 	conn.SetWriteDeadline(time.Now().Add(writeWait))
 	conn.WriteJSON(Frame{Type: typ, Payload: payload, ServerTime: h.now()})
-	conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "wrong password"))
+	conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "not logged in"))
 	conn.Close()
 }
 

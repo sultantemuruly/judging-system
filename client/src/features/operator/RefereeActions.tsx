@@ -6,33 +6,42 @@ import { cornerName } from '../../shared/fightText';
 
 interface Props {
   view: FightView;
-  /** The next warning disqualifies: ask before sending it (§4). */
-  onFourthWarning: (corner: Corner) => void;
-  onStopFight: () => void;
+  /** The next warning disqualifies: ask before sending it (§4). Without the
+   *  handlers the table is read-only (the public board). */
+  onFourthWarning?: (corner: Corner) => void;
+  onStopFight?: () => void;
 }
 
 const corners: Corner[] = ['Red', 'Blue'];
 
 const tone = {
-  Red: 'bg-red-950/60 border-red-800/60 hover:bg-red-900/60',
-  Blue: 'bg-blue-950/60 border-blue-800/60 hover:bg-blue-900/60',
+  Red: 'bg-red-950/60 border-red-800/60',
+  Blue: 'bg-blue-950/60 border-blue-800/60',
 };
+const hover = { Red: 'hover:bg-red-900/60', Blue: 'hover:bg-blue-900/60' };
 
-/** Referee decisions the operator enters, one row per corner: knockdown, warning, minus point; and stopping the fight (§4, §5). */
+/** Referee decisions the operator enters, one row per corner: knockdown,
+ *  warning, minus point; and stopping the fight (§4, §5). Without the handlers
+ *  it only shows the counts (the public board). */
 export default function RefereeActions({ view, onFourthWarning, onStopFight }: Props) {
+  const readOnly = !onFourthWarning || !onStopFight;
   const { clock, result } = view;
   const over = result.final;
   const roundOn = clock.phase === 'RUNNING' || clock.phase === 'PAUSED';
   const started = clock.phase !== 'NOT_STARTED';
   const alertCorner = corners.find(c => view.corners[c].knockdown_alert);
 
-  const warn = (c: Corner) => view.corners[c].next_warning_dq ? onFourthWarning(c) : sendAction('OFFICIAL_WARNING', { corner: c });
+  const warn = (c: Corner) => view.corners[c].next_warning_dq ? onFourthWarning?.(c) : sendAction('OFFICIAL_WARNING', { corner: c });
 
-  const cell = (c: Corner, label: string, count: string | number, disabled: boolean, onClick: () => void) => (
+  const cell = (c: Corner, label: string, count: string | number, disabled: boolean, onClick: () => void) => readOnly ? (
+    <div className={`h-12 border rounded-lg flex items-center justify-center px-1 sm:px-4 ${tone[c]}`}>
+      <span className="text-white font-black text-lg sm:text-2xl tabular-nums whitespace-nowrap">{count}</span>
+    </div>
+  ) : (
     <button
       disabled={disabled}
       onClick={onClick}
-      className={`h-12 border rounded-lg flex items-center justify-between px-4 text-sm font-bold text-zinc-200 disabled:opacity-30 cursor-pointer ${tone[c]}`}
+      className={`h-12 border rounded-lg flex items-center justify-between px-4 text-sm font-bold text-zinc-200 disabled:opacity-30 cursor-pointer ${tone[c]} ${hover[c]}`}
     >
       <span>+ {label}</span>
       <span className="text-white font-black text-xl tabular-nums">{count}</span>
@@ -41,11 +50,11 @@ export default function RefereeActions({ view, onFourthWarning, onStopFight }: P
 
   return (
     <div className="w-full bg-zinc-900/80 border border-zinc-800 rounded-xl p-3 flex-shrink-0">
-      <div className="grid grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,1fr))] gap-2 items-center">
-        <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Referee</div>
-        <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Knockdowns <span className="normal-case">(round / fight)</span></div>
-        <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Official warnings</div>
-        <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Minus points (−3)</div>
+      <div className="grid grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,1fr))] gap-1 sm:gap-2 items-center">
+        <div className="text-[9px] sm:text-[11px] font-bold text-zinc-500 uppercase tracking-normal sm:tracking-widest break-words">Referee</div>
+        <div className="text-[9px] sm:text-[11px] font-bold text-zinc-500 uppercase tracking-normal sm:tracking-widest break-words">Knockdowns <span className="normal-case">(round / fight)</span></div>
+        <div className="text-[9px] sm:text-[11px] font-bold text-zinc-500 uppercase tracking-normal sm:tracking-widest break-words">Official warnings</div>
+        <div className="text-[9px] sm:text-[11px] font-bold text-zinc-500 uppercase tracking-normal sm:tracking-widest break-words">Minus points (−3)</div>
         {corners.map(c => {
           const cv = view.corners[c];
           return (
@@ -64,20 +73,20 @@ export default function RefereeActions({ view, onFourthWarning, onStopFight }: P
           );
         })}
       </div>
-      <div className="mt-3 flex items-center gap-3">
-        <button
+      {(!readOnly || (alertCorner && !over)) && <div className="mt-3 flex items-center gap-3">
+        {!readOnly && <button
           disabled={view.stoppage_methods.length === 0}
           onClick={onStopFight}
           className="h-11 px-5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 rounded-lg text-white font-bold text-sm flex items-center gap-2 cursor-pointer"
         >
           <OctagonX size={16} /> Stop the fight ({(view.stoppage_methods.length ? view.stoppage_methods : ['KO', 'RSC', 'DQ', 'AB']).join(', ')})…
-        </button>
+        </button>}
         {alertCorner && !over && (
           <div className="text-sm text-yellow-400 font-bold animate-pulse">
             {cornerName(view, alertCorner)}: one more knockdown stops the fight
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
