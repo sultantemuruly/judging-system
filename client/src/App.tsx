@@ -7,6 +7,7 @@ import JudgeScreen from './features/judge/JudgeScreen'
 import JudgePicker from './features/judge/JudgePicker'
 import ViewerScreen from './features/viewer/ViewerScreen'
 import BoardScreen from './features/viewer/BoardScreen'
+import BoardBrackets from './features/viewer/BoardBrackets'
 import BracketSetup from './features/tournament/BracketSetup'
 import BracketsPage from './features/tournament/BracketsPage'
 import MatchSchedule from './features/tournament/MatchSchedule'
@@ -63,6 +64,7 @@ function App() {
           <Route path="/judge/:id" element={<JudgeScreen view={state} />} />
           <Route path="/viewer" element={<ViewerScreen view={state} />} />
           <Route path="/board" element={<BoardScreen view={state} />} />
+          <Route path="/board/brackets" element={<BoardBrackets tournament={tournament} />} />
           <Route path="/tournament/setup" element={<BracketSetup tournament={tournament} />} />
           <Route path="/tournament/brackets" element={<BracketsPage tournament={tournament} />} />
           <Route path="/tournament/brackets/all" element={<Navigate to="/tournament/brackets" replace />} />
