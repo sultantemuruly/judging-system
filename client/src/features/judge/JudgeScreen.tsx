@@ -4,7 +4,8 @@ import { reclaimSeat, sameSession, sendAction, subscribeToResults } from '../../
 import type { Corner, FightView, Phase } from '../../api/protocol';
 import { useConnection } from '../../shared/useConnection';
 import { useWakeLock } from './useWakeLock';
-import { Undo2, WifiOff } from 'lucide-react';
+// Undo2 is for the «Отменить» button, hidden for now (see below).
+import { /* Undo2, */ WifiOff } from 'lucide-react';
 
 interface Props {
   view: FightView;
@@ -90,7 +91,7 @@ export default function JudgeScreen({ view }: Props) {
   }
 
   const isEnabled = clock.phase === 'RUNNING' && !result.final;
-  const canUndo = me.hits > 0 && !result.confirmed && clock.phase !== 'NOT_STARTED';
+  // const canUndo = me.hits > 0 && !result.confirmed && clock.phase !== 'NOT_STARTED';
   const online = status === 'open';
 
   const phaseLine = describePhase(clock.phase, clock.round, clock.rounds, result.final);
@@ -109,7 +110,7 @@ export default function JudgeScreen({ view }: Props) {
         </div>
       )}
 
-      {/* Top bar: seat, my score, undo */}
+      {/* Top bar: seat, my score (the undo button is hidden for now) */}
       <div className="h-14 flex items-center justify-between px-3 bg-zinc-900 border-b border-zinc-800 gap-2">
         <div className="text-base font-black tracking-widest text-zinc-400 uppercase whitespace-nowrap">
           Судья <span className="text-white">{seat}</span>
@@ -120,6 +121,8 @@ export default function JudgeScreen({ view }: Props) {
           <span className="text-blue-500">{me.total.blue}</span>
           {pending > 0 && online && <span className="text-xs text-zinc-500 ml-2">+{pending}…</span>}
         </div>
+        {/* «Отменить» hidden for now at the club's request. Spec §3 still has the
+            judge's undo; to bring it back, uncomment this, canUndo and Undo2.
         <button
           disabled={!canUndo}
           onClick={() => sendAction('UNDO_HIT', { fight_id: view.fight_id })}
@@ -127,6 +130,7 @@ export default function JudgeScreen({ view }: Props) {
         >
           <Undo2 size={16} /> Отменить
         </button>
+        */}
       </div>
 
       {/* What is happening now, in words */}
