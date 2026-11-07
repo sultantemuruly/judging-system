@@ -23,6 +23,13 @@ const refusals: Record<string, string> = {
   tap_too_old: 'Нажатие из очереди слишком старое (часы телефона сбились) — не засчитано',
 };
 
+/** Why taps made without a connection were refused once it was back. */
+const queuedRefusals: Record<string, string> = {
+  clock_not_running: 'Пока не было связи, время боя на сервере не шло (например, сервер был недоступен). Главный судья видит это у себя.',
+  tap_too_old: 'Часы телефона сбились, пока не было связи.',
+  wrong_fight: 'Они относились к прошлому бою.',
+};
+
 /** The line under the top bar: what the judge should expect, in words. */
 function describePhase(phase: Phase, round: number, rounds: number, over: boolean): { text: string; tone: string } {
   if (over) return { text: 'Бой окончен', tone: 'bg-zinc-800 text-zinc-300' };
@@ -51,12 +58,21 @@ export default function JudgeScreen({ view }: Props) {
   const { pending } = connection;
   const status = mine ? connection.status : 'connecting';
   const [notice, setNotice] = useState('');
+  // Taps made without a connection that the server refused once it was back.
+  // Stays on screen until the judge dismisses it: they were told these taps
+  // would be sent, so a 3-second toast isn't enough.
+  const [lostTaps, setLostTaps] = useState<{ count: number; reason: string }>({ count: 0, reason: '' });
 
   useWakeLock(true);
 
   // Vibrate when the server confirms a tap, not on the tap itself (§3).
   useEffect(() => subscribeToResults((type, r) => {
     if (r.ok && type === 'REGISTER_HIT') vibrate(40);
+    if (!r.ok && r.queued && type === 'REGISTER_HIT') {
+      setLostTaps(l => ({ count: l.count + 1, reason: r.reason ?? '' }));
+      vibrate(200);
+      return;
+    }
     if (!r.ok && r.reason) {
       setNotice(refusals[r.reason] ?? `Отклонено: ${r.reason}`);
       vibrate(200);
@@ -135,6 +151,19 @@ export default function JudgeScreen({ view }: Props) {
 
       {/* What is happening now, in words */}
       <div className={`py-1.5 text-center text-sm font-black uppercase tracking-wider ${phaseLine.tone}`}>{phaseLine.text}</div>
+
+      {lostTaps.count > 0 && (
+        <div className="absolute top-20 inset-x-4 z-[45] bg-red-600 text-white text-center rounded-xl py-3 px-4 shadow-xl">
+          <div className="font-black">{lostTaps.count} нажат., сделанных без связи, не засчитаны</div>
+          <div className="text-sm mt-1">{queuedRefusals[lostTaps.reason] ?? refusals[lostTaps.reason] ?? `Отклонено: ${lostTaps.reason}`}</div>
+          <button
+            onClick={() => setLostTaps({ count: 0, reason: '' })}
+            className="mt-2 px-5 py-1.5 bg-white text-red-700 rounded-lg font-black cursor-pointer"
+          >
+            Понятно
+          </button>
+        </div>
+      )}
 
       {notice && (
         <div className="absolute top-20 inset-x-4 z-40 bg-yellow-500 text-black font-bold text-center rounded-xl py-3 px-4 shadow-xl">

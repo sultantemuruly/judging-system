@@ -69,6 +69,8 @@ function App() {
           <Route path="/tournament/bracket/:categoryId" element={<BracketsPage tournament={tournament} />} />
           <Route path="/tournament/schedule" element={<MatchSchedule tournament={tournament} />} />
           <Route path="/tournament/print/:categoryId" element={<BracketPrint tournament={tournament} />} />
+          {/* A mistyped address lands on the start screen, not a blank page. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AdminGate>
     </BrowserRouter>

@@ -20,6 +20,8 @@ export interface ActionResult {
   reason?: string;
   /** Admin login locked out: seconds until the next try is accepted. */
   retryAfterS?: number;
+  /** The action was resent from the offline queue (made without a connection). */
+  queued?: boolean;
 }
 
 // The WebSocket URL:
@@ -361,11 +363,14 @@ function rawSend(frame: ActionFrame): boolean {
 }
 
 const sentTypes = new Map<string, string>();
+/** IDs of actions resent from the offline queue, not sent live. */
+const resentIds = new Set<string>();
 
 function settle(id: string, r: ActionResult) {
   queue?.settle(id);
   const type = sentTypes.get(id) ?? '';
   sentTypes.delete(id);
+  if (resentIds.delete(id)) r = { ...r, queued: true };
   waiting.get(id)?.(r);
   waiting.delete(id);
   resultListeners.forEach(cb => cb(type, r));
@@ -389,6 +394,7 @@ function keepForRetry(id: string, reason: string) {
 function flushQueue() {
   for (const a of queue?.pending() ?? []) {
     sentTypes.set(a.id, a.type);
+    resentIds.add(a.id);
     rawSend({ ...a, offline: true });
   }
 }

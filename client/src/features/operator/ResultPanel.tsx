@@ -9,6 +9,7 @@ import { cornerName, resultLabel, winnerTextColor } from '../../shared/fightText
 function judgeHold(j: JudgeView): string {
   if (!j.connected) return `Judge ${j.seat} is offline`;
   if (j.pending > 0) return `Judge ${j.seat}: ${j.pending} tap${j.pending === 1 ? '' : 's'} not sent yet`;
+  if (j.awaiting_report) return `Judge ${j.seat}: waiting for the phone to check in`;
   return '';
 }
 

@@ -54,6 +54,11 @@ type Ring struct {
 	// every 3 s). A phone whose Wi-Fi just died still looks connected until
 	// its socket times out, and can't report the taps it is holding (§7, S20).
 	heard [match.JudgeCount + 1]int64
+	// offlineRefused holds, per seat, the IDs of this fight's taps that were
+	// made without a connection and then refused by the rules, e.g. made
+	// while the server was down and the round is restored paused (§9). The
+	// operator sees how many; IDs keep a resent tap from counting twice.
+	offlineRefused [match.JudgeCount + 1]map[string]bool
 }
 
 func New(opts Options) *Ring {
@@ -87,6 +92,7 @@ func (r *Ring) NewFight(id string, cfg match.FightConfig) (match.Fight, error) {
 	r.mu.Lock()
 	old, oldLog := r.fight, r.log
 	r.fight, r.log = f, l
+	r.offlineRefused = [match.JudgeCount + 1]map[string]bool{}
 	r.armLocked()
 	if oldLog != nil {
 		oldLog.Close()
@@ -107,6 +113,7 @@ func (r *Ring) Restore(events []match.Event, l Log, lastSeen int64) error {
 	}
 	r.mu.Lock()
 	r.fight, r.log = f, l
+	r.offlineRefused = [match.JudgeCount + 1]map[string]bool{}
 	r.mu.Unlock()
 	if f.Phase() == match.Running {
 		last := max(events[len(events)-1].At, lastSeen)
@@ -143,7 +150,11 @@ func (r *Ring) apply(e match.Event) error {
 	wasConfirmed := r.fight.Result().Confirmed
 	next, err := match.Apply(r.fight, e)
 	if err != nil {
+		counted := r.noteOfflineRefusalLocked(e, err)
 		r.mu.Unlock()
+		if counted {
+			r.opts.OnChange()
+		}
 		return err
 	}
 	if r.log != nil {
@@ -164,6 +175,24 @@ func (r *Ring) apply(e match.Event) error {
 		}
 	}
 	return nil
+}
+
+// noteOfflineRefusalLocked records a judge's tap from the offline queue that
+// the rules refused, and reports whether it is newly counted.
+func (r *Ring) noteOfflineRefusalLocked(e match.Event, err error) bool {
+	seat := e.Actor.Seat
+	if e.Type != match.Hit || !e.Offline || e.Actor.Kind != match.Judge ||
+		seat < 1 || seat > match.JudgeCount || errors.Is(err, match.ErrDuplicate) {
+		return false
+	}
+	if r.offlineRefused[seat] == nil {
+		r.offlineRefused[seat] = map[string]bool{}
+	}
+	if r.offlineRefused[seat][e.ID] {
+		return false
+	}
+	r.offlineRefused[seat][e.ID] = true
+	return true
 }
 
 // Close stops the round timer; the ring accepts no more timer events.
@@ -219,9 +248,13 @@ func (r *Ring) View() match.FightView {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	v := r.fight.View(r.now())
+	last := r.lastEventAtLocked()
 	for i := range v.Judges {
-		v.Judges[i].Connected = r.seats[v.Judges[i].Seat]
-		v.Judges[i].Pending = r.pending[v.Judges[i].Seat]
+		seat := v.Judges[i].Seat
+		v.Judges[i].Connected = r.seats[seat]
+		v.Judges[i].Pending = r.pending[seat]
+		v.Judges[i].AwaitingReport = r.seats[seat] && r.heard[seat] < last
+		v.Judges[i].OfflineRefused = len(r.offlineRefused[seat])
 	}
 	v.JudgesSynced = r.judgesSyncedLocked()
 	return v
@@ -252,16 +285,21 @@ func (r *Ring) JudgesSynced() bool {
 // been heard from since the fight's last event, so no tap made before the
 // gong or the stoppage can still be on its way.
 func (r *Ring) judgesSyncedLocked() bool {
-	var last int64
-	if n := len(r.fight.Events); n > 0 {
-		last = r.fight.Events[n-1].At
-	}
+	last := r.lastEventAtLocked()
 	for seat := 1; seat <= match.JudgeCount; seat++ {
 		if !r.seats[seat] || r.pending[seat] > 0 || r.heard[seat] < last {
 			return false
 		}
 	}
 	return true
+}
+
+// lastEventAtLocked is the server time of the fight's last event, or 0.
+func (r *Ring) lastEventAtLocked() int64 {
+	if n := len(r.fight.Events); n > 0 {
+		return r.fight.Events[n-1].At
+	}
+	return 0
 }
 
 // Heard records that the device on seat just sent something.

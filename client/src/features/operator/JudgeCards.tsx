@@ -14,7 +14,12 @@ export default function JudgeCards({ view }: { view: FightView }) {
               <div className="text-white text-[10px] sm:text-xs font-black uppercase tracking-widest">Judge {judge.seat}</div>
               {!judge.connected && <div className="text-[10px] text-red-400 font-bold uppercase animate-pulse">Offline</div>}
               {judge.pending > 0 && <div className="text-[10px] text-amber-400 font-bold uppercase">{judge.pending} tap{judge.pending === 1 ? '' : 's'} pending</div>}
-              {judge.decision_needed && <div className="text-[10px] text-yellow-400 font-bold uppercase animate-pulse">Deciding…</div>}
+              {judge.offline_refused > 0 && (
+                <div className="text-[10px] text-red-400 font-bold uppercase" title="Taps made without a connection (e.g. while the server was down) that arrived when time wasn't running">
+                  {judge.offline_refused} offline tap{judge.offline_refused === 1 ? '' : 's'} not counted
+                </div>
+              )}
+              {judge.decision_needed &&<div className="text-[10px] text-yellow-400 font-bold uppercase animate-pulse">Deciding…</div>}
               {judge.verdict && (
                 <div className={`text-[11px] font-black uppercase ${winnerTextColor(judge.verdict)}`}>
                   {judge.verdict}{judge.decided ? ' (decision)' : ''}
