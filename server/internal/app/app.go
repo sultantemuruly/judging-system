@@ -29,7 +29,6 @@ var (
 	errNotAllowed         = errors.New("not_allowed")
 	errRejected           = errors.New("rejected")
 	errJudgesNotConnected = errors.New("judges_not_connected")
-	errWrongFight         = errors.New("wrong_fight")
 	errFightInProgress    = errors.New("fight_in_progress")
 	errJudgesNotSynced    = errors.New("judges_not_synced")
 )

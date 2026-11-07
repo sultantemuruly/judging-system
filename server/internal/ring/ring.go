@@ -23,6 +23,10 @@ type Log interface {
 // the action can be sent again.
 var ErrPersist = errors.New("server_error")
 
+// ErrWrongFight means the action was made for another fight than the one on
+// the ring, e.g. a tap queued during the previous fight. Nothing changed.
+var ErrWrongFight = errors.New("wrong_fight")
+
 // ErrNotRecorded means the result was confirmed but OnDecided failed to record it.
 var ErrNotRecorded = errors.New("result_not_recorded")
 
@@ -120,7 +124,7 @@ func (r *Ring) Restore(events []match.Event, l Log, lastSeen int64) error {
 		if end, _ := f.RoundEndsAt(); last > end {
 			last = end
 		}
-		err := r.apply(match.Event{
+		err := r.apply("", match.Event{
 			ID: fmt.Sprintf("sys-%s-restore-%d", f.Config.FightID, len(events)), Type: match.ClockPaused,
 			Actor: match.Actor{Kind: match.System}, At: last,
 		})
@@ -139,14 +143,26 @@ func (r *Ring) Restore(events []match.Event, l Log, lastSeen int64) error {
 // the log and then commits it. A rejected event changes nothing; the one
 // exception is ErrNotRecorded, returned after the event was committed.
 func (r *Ring) Apply(e match.Event) error {
+	return r.ApplyToFight("", e)
+}
+
+// ApplyToFight is Apply for an action made for fightID: it is refused with
+// ErrWrongFight unless that fight is still the one on the ring. The check
+// and the apply are one step, so a fight replaced in between can't receive
+// the old fight's action. An empty fightID matches any fight.
+func (r *Ring) ApplyToFight(fightID string, e match.Event) error {
 	if e.At == 0 {
 		e.At = r.now()
 	}
-	return r.apply(e)
+	return r.apply(fightID, e)
 }
 
-func (r *Ring) apply(e match.Event) error {
+func (r *Ring) apply(fightID string, e match.Event) error {
 	r.mu.Lock()
+	if fightID != "" && fightID != r.fight.Config.FightID {
+		r.mu.Unlock()
+		return ErrWrongFight
+	}
 	wasConfirmed := r.fight.Result().Confirmed
 	next, err := match.Apply(r.fight, e)
 	if err != nil {
@@ -229,7 +245,7 @@ func (r *Ring) timeUp(id string, end int64) {
 	if !ok || cur != end || closed {
 		return // paused or changed in the meantime; the alarm was re-armed
 	}
-	err := r.apply(match.Event{ID: id, Type: match.RoundEnded, Actor: match.Actor{Kind: match.System}, At: end})
+	err := r.apply("", match.Event{ID: id, Type: match.RoundEnded, Actor: match.Actor{Kind: match.System}, At: end})
 	if err != nil && !errors.Is(err, match.ErrDuplicate) && !errors.Is(err, match.ErrClockState) {
 		log.Printf("ring: ending round: %v", err)
 	}

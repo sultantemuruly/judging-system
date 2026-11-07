@@ -371,3 +371,33 @@ func TestOfflineRefusalIsBroadcastAndCapped(t *testing.T) {
 		t.Fatalf("%d broadcasts, want %d (none past the cap)", got, maxOfflineRefusedTracked)
 	}
 }
+
+// A tap made for a fight that is no longer on the ring is refused in the
+// same step as applying it, so a fight replaced just before can't receive
+// it, and it isn't shown as this fight's lost offline tap.
+func TestTapForReplacedFightIsRefusedInsideTheRing(t *testing.T) {
+	r, c := newTestRing(t) // fight f-1
+	if _, err := r.NewFight("f-2", match.FightConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	must(t, r, match.RoundStarted)
+	c.Advance(time.Second)
+
+	if err := r.ApplyToFight("f-1", offlineHit("old", 1, 0)); !errors.Is(err, ErrWrongFight) {
+		t.Fatalf("tap for the replaced fight: %v, want ErrWrongFight", err)
+	}
+	v := r.View()
+	if v.Judges[0].Hits != 0 || v.Judges[0].OfflineRefused != 0 {
+		t.Fatalf("judge 1 = %d hits, %d offline refused; want 0, 0", v.Judges[0].Hits, v.Judges[0].OfflineRefused)
+	}
+
+	if err := r.ApplyToFight("f-2", offlineHit("new", 1, 0)); err != nil {
+		t.Fatalf("tap for the fight on the ring: %v", err)
+	}
+	if err := r.ApplyToFight("", offlineHit("any", 1, 0)); err != nil {
+		t.Fatalf("tap without a fight ID: %v", err)
+	}
+	if got := r.View().Judges[0].Hits; got != 2 {
+		t.Fatalf("hits = %d, want 2", got)
+	}
+}
