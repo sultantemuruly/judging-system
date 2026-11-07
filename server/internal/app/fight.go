@@ -169,7 +169,7 @@ func (a *App) fightAction(msg ws.Action) error {
 	if e.Type == match.RoundStarted && a.ring.Fight().Phase() == match.NotStarted && !a.ring.AllSeatsConnected() {
 		return errJudgesNotConnected
 	}
-	return a.applyEvent(msg.Type, e)
+	return a.applyEvent(msg.Type, "", e)
 }
 
 // judgeAction applies an action from the judge on seat.
@@ -179,16 +179,15 @@ func (a *App) judgeAction(seat int, msg ws.Action) error {
 		return errRejected
 	}
 	e.Actor = match.Actor{Kind: match.Judge, Seat: seat}
-	// A tap queued during another fight must not count in this one.
-	if p.FightID != "" && p.FightID != a.ring.Fight().Config.FightID {
-		return errWrongFight
-	}
-	return a.applyEvent(msg.Type, e)
+	// A tap queued during another fight must not count in this one; the ring
+	// checks that in the same step as applying it.
+	return a.applyEvent(msg.Type, p.FightID, e)
 }
 
-// applyEvent applies e to the ring; a repeated action ID is not an error.
-func (a *App) applyEvent(action string, e match.Event) error {
-	err := a.ring.Apply(e)
+// applyEvent applies e to the ring, if fightID (when set) is still the fight
+// on it; a repeated action ID is not an error.
+func (a *App) applyEvent(action, fightID string, e match.Event) error {
+	err := a.ring.ApplyToFight(fightID, e)
 	if errors.Is(err, match.ErrDuplicate) {
 		return nil
 	}
@@ -200,7 +199,7 @@ func (a *App) applyEvent(action string, e match.Event) error {
 
 // nackCode reduces ring errors that carry details to their stable code.
 func nackCode(err error) error {
-	for _, code := range []error{ring.ErrPersist, ring.ErrNotRecorded} {
+	for _, code := range []error{ring.ErrPersist, ring.ErrNotRecorded, ring.ErrWrongFight} {
 		if errors.Is(err, code) {
 			return code
 		}

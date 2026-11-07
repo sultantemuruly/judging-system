@@ -35,6 +35,10 @@ export interface JudgeView {
   decision_needed: boolean;
   /** Taps the judge's device holds that the server hasn't confirmed yet. */
   pending: number;
+  /** Connected, but not heard from since the fight's last event: a tap may still be on its way (§7). */
+  awaiting_report: boolean;
+  /** This fight's taps made without a connection that the server refused (e.g. made while it was down). */
+  offline_refused: number;
 }
 
 export interface CornerView {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { reclaimSeat, sameSession, sendAction, subscribeToResults } from '../../api/socket';
 import type { Corner, FightView, Phase } from '../../api/protocol';
@@ -22,6 +22,47 @@ const refusals: Record<string, string> = {
   server_error: 'Сбой на сервере — нажатие сохранено и будет отправлено повторно',
   tap_too_old: 'Нажатие из очереди слишком старое (часы телефона сбились) — не засчитано',
 };
+
+/** Why taps made without a connection were refused once it was back. */
+const queuedRefusals: Record<string, string> = {
+  clock_not_running: 'Пока не было связи, время боя на сервере не шло (например, сервер был недоступен). Главный судья видит это у себя.',
+  tap_too_old: 'Часы телефона сбились, пока не было связи.',
+  wrong_fight: 'Они относились к прошлому бою.',
+};
+
+interface LostTaps {
+  fightId: string;
+  byReason: Record<string, number>;
+}
+
+/** Adds one refused offline tap; a new fight starts the count over. */
+function addLostTap(l: LostTaps, fightId: string, reason: string): LostTaps {
+  const byReason = l.fightId === fightId ? l.byReason : {};
+  return { fightId, byReason: { ...byReason, [reason]: (byReason[reason] ?? 0) + 1 } };
+}
+
+/** A bar above the buttons (not over them, so no tap lands on it) listing the
+ *  taps made without a connection that didn't count, and why. */
+function LostTapsBar({ byReason, onDismiss }: { byReason: Record<string, number>; onDismiss: () => void }) {
+  const reasons = Object.entries(byReason);
+  const total = reasons.reduce((n, [, c]) => n + c, 0);
+  if (total === 0) return null;
+  return (
+    <div className="bg-red-600 text-white px-3 py-2 flex items-center gap-3">
+      <div className="flex-1 min-w-0 text-left">
+        <div className="font-black text-sm">{total} нажат., сделанных без связи, не засчитаны</div>
+        {reasons.map(([reason, n]) => (
+          <div key={reason} className="text-xs">
+            {reasons.length > 1 && `${n}: `}{queuedRefusals[reason] ?? refusals[reason] ?? `Отклонено: ${reason}`}
+          </div>
+        ))}
+      </div>
+      <button onClick={onDismiss} className="flex-shrink-0 px-4 py-1.5 bg-white text-red-700 rounded-lg font-black text-sm cursor-pointer">
+        Понятно
+      </button>
+    </div>
+  );
+}
 
 /** The line under the top bar: what the judge should expect, in words. */
 function describePhase(phase: Phase, round: number, rounds: number, over: boolean): { text: string; tone: string } {
@@ -51,12 +92,24 @@ export default function JudgeScreen({ view }: Props) {
   const { pending } = connection;
   const status = mine ? connection.status : 'connecting';
   const [notice, setNotice] = useState('');
+  // Taps made without a connection that the server refused once it was back,
+  // counted per reason for the fight they arrived in. Stays on screen until
+  // the judge dismisses it: they were told these taps would be sent, so a
+  // 3-second toast isn't enough.
+  const [lostTaps, setLostTaps] = useState<LostTaps>({ fightId: '', byReason: {} });
+  const fightRef = useRef(view.fight_id);
+  useEffect(() => { fightRef.current = view.fight_id; }, [view.fight_id]);
 
   useWakeLock(true);
 
   // Vibrate when the server confirms a tap, not on the tap itself (§3).
   useEffect(() => subscribeToResults((type, r) => {
     if (r.ok && type === 'REGISTER_HIT') vibrate(40);
+    if (!r.ok && r.queued && type === 'REGISTER_HIT') {
+      setLostTaps(l => addLostTap(l, fightRef.current, r.reason ?? ''));
+      vibrate(200);
+      return;
+    }
     if (!r.ok && r.reason) {
       setNotice(refusals[r.reason] ?? `Отклонено: ${r.reason}`);
       vibrate(200);
@@ -136,8 +189,13 @@ export default function JudgeScreen({ view }: Props) {
       {/* What is happening now, in words */}
       <div className={`py-1.5 text-center text-sm font-black uppercase tracking-wider ${phaseLine.tone}`}>{phaseLine.text}</div>
 
+      {lostTaps.fightId === view.fight_id && (
+        <LostTapsBar byReason={lostTaps.byReason} onDismiss={() => setLostTaps({ fightId: '', byReason: {} })} />
+      )}
+
+      {/* Click-through, so a tap on the buttons under it is never swallowed. */}
       {notice && (
-        <div className="absolute top-20 inset-x-4 z-40 bg-yellow-500 text-black font-bold text-center rounded-xl py-3 px-4 shadow-xl">
+        <div className="pointer-events-none absolute top-20 inset-x-4 z-40 bg-yellow-500 text-black font-bold text-center rounded-xl py-3 px-4 shadow-xl">
           {notice}
         </div>
       )}

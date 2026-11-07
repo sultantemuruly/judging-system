@@ -51,6 +51,13 @@ type JudgeView struct {
 	DecisionNeeded bool   `json:"decision_needed"` // the judge must choose RED or BLUE now
 	// Pending is how many taps the judge's device holds that the server hasn't confirmed.
 	Pending int `json:"pending"`
+	// AwaitingReport: the judge's device is connected but hasn't been heard
+	// from since the fight's last event, so a tap may still be on its way (§7).
+	AwaitingReport bool `json:"awaiting_report"`
+	// OfflineRefused counts this fight's taps the judge made without a
+	// connection that the rules then refused (e.g. made while the server was
+	// down: the round is restored paused, so they fall outside running time).
+	OfflineRefused int `json:"offline_refused"`
 }
 
 type CornerView struct {

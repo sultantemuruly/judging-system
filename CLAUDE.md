@@ -80,6 +80,7 @@ Known gaps (pilot scope, spec §0):
 - The judge's «Отменить» (undo last tap, spec §3) is commented out in `JudgeScreen.tsx` at the club's request; the server still accepts `UNDO_HIT`, and the operator can still undo referee actions.
 - `MatchSchedule.tsx` priorities are hardcoded to one past tournament's categories.
 - Wake Lock needs HTTPS; on plain-HTTP LAN judges must disable auto-lock.
+- Taps made while the server is down are refused: a restart restores the round paused at the last heartbeat, so they fall outside running time (spec §3, scenario 21: the club chose this over counting them). They aren't lost silently: the judge's phone shows a banner with how many didn't count until dismissed, and the operator's judge card shows "N offline taps not counted" for the fight (`offline_refused` in the view, tracked in `internal/ring` by action ID, capped per seat, reset per fight, not persisted). A tap counts as "made without a connection" only if it got no answer on its connection and was resent after a reconnect. Don't deploy during a fight.
 
 ## Conventions
 

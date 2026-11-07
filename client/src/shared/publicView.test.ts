@@ -7,7 +7,7 @@ const action = (id: string, type: ActionView['type'], extra: Partial<ActionView>
 
 const judges = [1, 2, 3].map(seat => ({
   seat, connected: true, rounds: [], total: { red: seat, blue: 2 }, hits: 0, leader: 'Red' as const,
-  verdict: 'Red' as const, decided: true, decision_needed: false, pending: 0,
+  verdict: 'Red' as const, decided: true, decision_needed: false, pending: 0, awaiting_report: false, offline_refused: 0,
 }));
 
 const fight = (confirmed: boolean, actions: ActionView[]): FightView => ({
