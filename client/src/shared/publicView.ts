@@ -1,8 +1,11 @@
 import type { ActionView, CornerView, FightView } from '../api/protocol';
 
 /** Actions that decide the fight, and so name the winner: a stoppage, or the
- *  warning that disqualifies. Undone ones decided nothing. */
+ *  warning that disqualifies. */
 const decides = (a: ActionView) => !a.undone && (a.type === 'Stoppage' || !!a.disqualifies);
+/** Hidden before confirmation: the deciding action, and any stoppage at all,
+ *  since an undone one still says who it named (e.g. KO undone, re-entered as RSC). */
+const hidden = (a: ActionView) => decides(a) || a.type === 'Stoppage';
 
 /**
  * The fight as a public screen may show it. The winner is shown only after
@@ -21,7 +24,7 @@ export function publicView(view: FightView): FightView {
   return {
     ...view,
     corners,
-    actions: view.actions.filter(a => !decides(a)),
+    actions: view.actions.filter(a => !hidden(a)),
     judges: view.judges.map(j => ({ ...j, verdict: '', decided: false })),
   };
 }

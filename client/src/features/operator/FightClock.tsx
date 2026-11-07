@@ -17,9 +17,9 @@ export default function FightClock({ view }: { view: FightView }) {
             <div className="text-zinc-400 text-sm font-black uppercase tracking-[0.2em] mb-1">{view.category}</div>
           )}
           <div className="flex items-center justify-center gap-3 sm:gap-6">
-            <div className="text-right flex-1 text-red-500 text-2xl sm:text-4xl [@media(max-height:800px)]:text-3xl font-black uppercase tracking-tight leading-none">{view.red_name || 'RED'}</div>
+            <div className="text-right flex-1 min-w-0 break-words text-red-500 text-2xl sm:text-4xl [@media(max-height:800px)]:text-3xl font-black uppercase tracking-tight leading-none">{view.red_name || 'RED'}</div>
             <div className="text-zinc-600 font-black text-2xl flex-shrink-0">VS</div>
-            <div className="text-left flex-1 text-blue-500 text-2xl sm:text-4xl [@media(max-height:800px)]:text-3xl font-black uppercase tracking-tight leading-none">{view.blue_name || 'BLUE'}</div>
+            <div className="text-left flex-1 min-w-0 break-words text-blue-500 text-2xl sm:text-4xl [@media(max-height:800px)]:text-3xl font-black uppercase tracking-tight leading-none">{view.blue_name || 'BLUE'}</div>
           </div>
         </div>
       )}

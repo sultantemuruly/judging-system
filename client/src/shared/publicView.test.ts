@@ -25,14 +25,14 @@ const dqFight = (confirmed: boolean) => fight(confirmed, [
 ]);
 
 describe('publicView', () => {
-  it('hides the deciding action until the result is confirmed', () => {
+  it('hides the deciding action and undone stoppages until the result is confirmed', () => {
     const v = publicView(fight(false, [action('w', 'OfficialWarning'), action('undone-stop', 'Stoppage', { undone: true }), action('s', 'Stoppage')]));
-    expect(v.actions.map(a => a.id)).toEqual(['w', 'undone-stop']);
+    expect(v.actions.map(a => a.id)).toEqual(['w']);
   });
 
   it('does not count the disqualifying warning before confirmation', () => {
     const v = publicView(dqFight(false));
-    expect(v.actions.map(a => a.id)).toEqual(['w1', 'undone-stop']);
+    expect(v.actions.map(a => a.id)).toEqual(['w1']);
     expect(v.corners.Blue).toMatchObject({ warnings: 3, next_warning_dq: true });
     expect(v.corners.Red).toEqual(emptyFight.corners.Red);
   });
