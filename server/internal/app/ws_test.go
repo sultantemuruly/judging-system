@@ -494,3 +494,33 @@ func TestOldJudgePasswordsAreIgnored(t *testing.T) {
 		t.Fatalf("judge refused: %v %s", err, f.Type)
 	}
 }
+
+// A tap from a judge's offline queue that the rules refuse reaches the
+// operator as offline_refused; a live tap refused the same way does not.
+func TestRefusedOfflineTapReachesOperator(t *testing.T) {
+	url, a, clk := wsServer(t)
+	j := judges(t, url)
+	op := dialOperator(t, url)
+	op.send("s", "START_ROUND", nil)
+	op.result("s")
+	clk.Advance(10 * time.Second)
+	op.send("p", "PAUSE_ROUND", nil)
+	if r := op.result("p"); r != "" {
+		t.Fatalf("pause: NACK %q", r)
+	}
+	clk.Advance(5 * time.Second)
+	fightID := a.ring.Fight().Config.FightID
+	p, _ := json.Marshal(map[string]string{"corner": "Blue", "fight_id": fightID})
+
+	j[2].conn.WriteJSON(ws.Action{ID: "live", Type: "REGISTER_HIT", Payload: p, ClientTime: clock.Ms(clk.Now())})
+	j[2].conn.WriteJSON(ws.Action{ID: "queued", Type: "REGISTER_HIT", Payload: p, ClientTime: clock.Ms(clk.Now()), Offline: true})
+	for _, id := range []string{"live", "queued"} {
+		if r := j[2].result(id); r != "clock_not_running" {
+			t.Fatalf("%s tap on a paused clock: %q, want clock_not_running", id, r)
+		}
+	}
+	op.waitState("judge 2 lost one offline tap", func(s stateUpdate) bool { return s.Judges[1].OfflineRefused == 1 })
+	if v := a.ring.View(); v.Judges[1].OfflineRefused != 1 || v.Judges[0].OfflineRefused != 0 {
+		t.Fatalf("offline_refused = %d, %d; want 0, 1", v.Judges[0].OfflineRefused, v.Judges[1].OfflineRefused)
+	}
+}

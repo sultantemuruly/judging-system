@@ -177,6 +177,10 @@ func (r *Ring) apply(e match.Event) error {
 	return nil
 }
 
+// maxOfflineRefusedTracked caps the refused offline taps counted per seat and
+// fight; a real outage loses far fewer.
+const maxOfflineRefusedTracked = 200
+
 // noteOfflineRefusalLocked records a judge's tap from the offline queue that
 // the rules refused, and reports whether it is newly counted.
 func (r *Ring) noteOfflineRefusalLocked(e match.Event, err error) bool {
@@ -188,7 +192,9 @@ func (r *Ring) noteOfflineRefusalLocked(e match.Event, err error) bool {
 	if r.offlineRefused[seat] == nil {
 		r.offlineRefused[seat] = map[string]bool{}
 	}
-	if r.offlineRefused[seat][e.ID] {
+	// Seats have no passwords, so cap what one device can make us keep and
+	// broadcast; past the cap the operator still sees that taps were lost.
+	if r.offlineRefused[seat][e.ID] || len(r.offlineRefused[seat]) >= maxOfflineRefusedTracked {
 		return false
 	}
 	r.offlineRefused[seat][e.ID] = true
@@ -248,12 +254,11 @@ func (r *Ring) View() match.FightView {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	v := r.fight.View(r.now())
-	last := r.lastEventAtLocked()
 	for i := range v.Judges {
 		seat := v.Judges[i].Seat
 		v.Judges[i].Connected = r.seats[seat]
 		v.Judges[i].Pending = r.pending[seat]
-		v.Judges[i].AwaitingReport = r.seats[seat] && r.heard[seat] < last
+		v.Judges[i].AwaitingReport = r.awaitingLocked(seat)
 		v.Judges[i].OfflineRefused = len(r.offlineRefused[seat])
 	}
 	v.JudgesSynced = r.judgesSyncedLocked()
@@ -294,6 +299,12 @@ func (r *Ring) judgesSyncedLocked() bool {
 	return true
 }
 
+// awaitingLocked: the device on seat is connected but hasn't been heard from
+// since the fight's last event, so a tap may still be on its way.
+func (r *Ring) awaitingLocked(seat int) bool {
+	return r.seats[seat] && r.heard[seat] < r.lastEventAtLocked()
+}
+
 // lastEventAtLocked is the server time of the fight's last event, or 0.
 func (r *Ring) lastEventAtLocked() int64 {
 	if n := len(r.fight.Events); n > 0 {
@@ -308,9 +319,12 @@ func (r *Ring) Heard(seat int) {
 		return
 	}
 	r.mu.Lock()
-	before := r.judgesSyncedLocked()
+	before, waited := r.judgesSyncedLocked(), r.awaitingLocked(seat)
 	r.heard[seat] = r.now()
-	changed := r.judgesSyncedLocked() != before
+	// Broadcast when the fight becomes confirmable, and also when this one
+	// phone checks in, so the operator's list of who holds things up stays
+	// right while another judge still does (§7, S20).
+	changed := r.judgesSyncedLocked() != before || r.awaitingLocked(seat) != waited
 	r.mu.Unlock()
 	if changed {
 		r.opts.OnChange()

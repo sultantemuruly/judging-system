@@ -119,6 +119,7 @@ export function sameSession(a: Session, b: Session) {
 export function connect(next: Session) {
   if (socket && sameSession(session, next) && status !== 'replaced') return;
   session = next;
+  resentIds.clear(); // answers for another seat's queue no longer reach this page
   queue = next.role === 'judge' ? new ActionQueue(`queue:judge:${next.seat}`, safeStorage()) : null;
   disconnect();
   open();
@@ -254,7 +255,7 @@ function open() {
     reportedPending = -1; // a new connection hears the queue size again
     setStatus('open');
     startTimers();
-    flushQueue();
+    flushQueue(true);
   };
   ws.onmessage = (event) => {
     if (socket !== ws) return; // a socket we already gave up on
@@ -363,7 +364,10 @@ function rawSend(frame: ActionFrame): boolean {
 }
 
 const sentTypes = new Map<string, string>();
-/** IDs of actions resent from the offline queue, not sent live. */
+/** IDs of actions that got no answer on the connection they were sent on and
+ *  were resent after a reconnect: made while there was no working connection.
+ *  (A phone whose Wi-Fi died still thinks its socket is open for a few
+ *  seconds, so "the send failed" alone would miss the taps made then.) */
 const resentIds = new Set<string>();
 
 function settle(id: string, r: ActionResult) {
@@ -386,15 +390,16 @@ let retryTimer = 0;
 function keepForRetry(id: string, reason: string) {
   resultListeners.forEach(cb => cb(sentTypes.get(id) ?? '', { ok: false, reason }));
   clearTimeout(retryTimer);
-  retryTimer = window.setTimeout(flushQueue, RETRY_AFTER_MS);
+  retryTimer = window.setTimeout(() => flushQueue(false), RETRY_AFTER_MS);
 }
 
 /** Resends everything still unconfirmed, oldest first. It may have been made
  *  while offline, so the server judges it by the time it was made. */
-function flushQueue() {
+function flushQueue(afterReconnect: boolean) {
   for (const a of queue?.pending() ?? []) {
     sentTypes.set(a.id, a.type);
-    resentIds.add(a.id);
+    // A retry after a server error on the same connection isn't "offline".
+    if (afterReconnect) resentIds.add(a.id);
     rawSend({ ...a, offline: true });
   }
 }

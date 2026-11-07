@@ -100,6 +100,27 @@ describe('socket', () => {
     ]);
   });
 
+  it('a retry after a server error on the same connection is not marked as made offline', async () => {
+    const socket = await loadSocket();
+    const results: { queued?: boolean; reason?: string }[] = [];
+    socket.subscribeToResults((_, r) => results.push({ queued: r.queued, reason: r.reason }));
+    socket.connect({ role: 'judge', seat: 1 });
+    const ws = FakeSocket.instances[0];
+    ws.open();
+    socket.sendAction('REGISTER_HIT', { corner: 'Red' }); // a live tap
+    const tap = ws.sent.find(f => f.type === 'REGISTER_HIT')!;
+    ws.receive({ type: 'NACK', payload: { id: tap.id, reason: 'server_error' } });
+
+    vi.advanceTimersByTime(2_000); // the tap is sent again on the same connection
+    expect(ws.sent.filter(f => f.id === tap.id)).toHaveLength(2);
+    ws.receive({ type: 'NACK', payload: { id: tap.id, reason: 'clock_not_running' } });
+
+    expect(results).toEqual([
+      { queued: undefined, reason: 'server_error' },
+      { queued: undefined, reason: 'clock_not_running' },
+    ]);
+  });
+
   it('replaces a silent connection at once, without waiting for the browser to close it', async () => {
     const socket = await loadSocket();
     socket.connect({ role: 'judge', seat: 3 });

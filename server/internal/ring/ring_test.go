@@ -2,6 +2,7 @@ package ring
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 	"testing"
@@ -243,7 +244,7 @@ func offlineHit(id string, seat int, clientTime int64) match.Event {
 
 // Taps made while the server was down are refused, since the round is
 // restored paused (§9), and the operator sees how many each judge lost.
-func TestOfflineTapsMadeDuringOutageAreCountedAsRefused(t *testing.T) {
+func TestSpec_S21_TapsMadeWhileServerDownAreRefusedAndReported(t *testing.T) {
 	c := clock.NewFake(time.UnixMilli(1_700_000_000_000))
 	log := &memLog{}
 	r := New(Options{Clock: c, OpenLog: func(string) (Log, error) { return log, nil }})
@@ -305,5 +306,68 @@ func TestOfflineRefusedCountsOnlyQueuedTapsOfThisFight(t *testing.T) {
 	}
 	if got := r.View().Judges[1].OfflineRefused; got != 0 {
 		t.Fatalf("new fight: offline_refused = %d, want 0", got)
+	}
+}
+
+// newCountingRing is a ring that counts its broadcasts (OnChange calls).
+func newCountingRing(t *testing.T) (*Ring, *clock.Fake, *int) {
+	t.Helper()
+	c := clock.NewFake(time.UnixMilli(1_700_000_000_000))
+	n := new(int)
+	r := New(Options{Clock: c, OnChange: func() { *n++ },
+		OpenLog: func(string) (Log, error) { return &memLog{}, nil }})
+	if _, err := r.NewFight("f-1", match.FightConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	return r, c, n
+}
+
+// One phone checking in is broadcast even while another judge still holds
+// the confirmation up, so the operator's list names the right judge (S20).
+func TestOneJudgeCheckingInIsBroadcast(t *testing.T) {
+	r, c, broadcasts := newCountingRing(t)
+	r.SetSeats([match.JudgeCount + 1]bool{false, true, true, true})
+	c.Advance(time.Second)
+	must(t, r, match.RoundStarted)
+	c.Advance(time.Second)
+
+	before := *broadcasts
+	r.Heard(1)
+	if *broadcasts != before+1 {
+		t.Fatalf("judge 1 checking in: %d broadcasts, want 1", *broadcasts-before)
+	}
+	if v := r.View(); v.JudgesSynced || v.Judges[0].AwaitingReport || !v.Judges[2].AwaitingReport {
+		t.Fatalf("after judge 1 checks in: synced=%v awaiting=%v,%v", v.JudgesSynced, v.Judges[0].AwaitingReport, v.Judges[2].AwaitingReport)
+	}
+
+	before = *broadcasts
+	r.Heard(1) // a ping that changes nothing is not broadcast
+	if *broadcasts != before {
+		t.Fatalf("repeated ping: %d broadcasts, want 0", *broadcasts-before)
+	}
+}
+
+// A refused offline tap is broadcast, so the operator's card updates; a
+// device can't make the ring keep or broadcast an unbounded number of them.
+func TestOfflineRefusalIsBroadcastAndCapped(t *testing.T) {
+	r, c, broadcasts := newCountingRing(t)
+	must(t, r, match.RoundStarted)
+	c.Advance(10 * time.Second)
+	must(t, r, match.ClockPaused)
+	c.Advance(time.Second)
+
+	before := *broadcasts
+	r.Apply(offlineHit("q-0", 1, 0))
+	if *broadcasts != before+1 {
+		t.Fatalf("refused offline tap: %d broadcasts, want 1", *broadcasts-before)
+	}
+	for i := 1; i < maxOfflineRefusedTracked+50; i++ {
+		r.Apply(offlineHit(fmt.Sprintf("q-%d", i), 1, 0))
+	}
+	if got := r.View().Judges[0].OfflineRefused; got != maxOfflineRefusedTracked {
+		t.Fatalf("offline_refused = %d, want capped at %d", got, maxOfflineRefusedTracked)
+	}
+	if got := *broadcasts - before; got != maxOfflineRefusedTracked {
+		t.Fatalf("%d broadcasts, want %d (none past the cap)", got, maxOfflineRefusedTracked)
 	}
 }

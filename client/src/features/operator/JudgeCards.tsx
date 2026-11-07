@@ -19,7 +19,7 @@ export default function JudgeCards({ view }: { view: FightView }) {
                   {judge.offline_refused} offline tap{judge.offline_refused === 1 ? '' : 's'} not counted
                 </div>
               )}
-              {judge.decision_needed &&<div className="text-[10px] text-yellow-400 font-bold uppercase animate-pulse">Deciding…</div>}
+              {judge.decision_needed && <div className="text-[10px] text-yellow-400 font-bold uppercase animate-pulse">Deciding…</div>}
               {judge.verdict && (
                 <div className={`text-[11px] font-black uppercase ${winnerTextColor(judge.verdict)}`}>
                   {judge.verdict}{judge.decided ? ' (decision)' : ''}
