@@ -5,13 +5,18 @@ import { Crown, Swords } from 'lucide-react';
 // Classic left-to-right tournament tree: round 1 on the far left, the final on
 // the right, then the champion. Cards sit in an SVG so connector lines line up.
 
-export interface BracketTreeProps {
-  bracket: Bracket;
-  activeBracketMatchId: string;
+/** What the operator can do with a match. Without it the tree is read-only (the public /board). */
+export interface BracketActions {
   onStartMatch: (matchId: string) => void;
   onWalkover: (match: BracketMatch) => void;
   onCorrect: (match: BracketMatch) => void;
   onOpenRing: () => void;
+}
+
+export interface BracketTreeProps {
+  bracket: Bracket;
+  activeBracketMatchId: string;
+  actions?: BracketActions;
 }
 
 const CARD_W = 230;
@@ -30,7 +35,7 @@ function roundLabel(round: number, totalRounds: number) {
   return `Round of ${2 ** (totalRounds - round + 1)}`;
 }
 
-export default function BracketTree({ bracket, activeBracketMatchId, onStartMatch, onWalkover, onCorrect, onOpenRing }: BracketTreeProps) {
+export default function BracketTree({ bracket, activeBracketMatchId, actions }: BracketTreeProps) {
   const totalRounds = bracket.total_rounds;
   const byRound = (r: number) => bracket.matches.filter(m => m.round === r).sort((a, b) => a.position - b.position);
 
@@ -64,10 +69,7 @@ export default function BracketTree({ bracket, activeBracketMatchId, onStartMatc
           <MatchCard
             match={match}
             isActive={activeBracketMatchId === match.id}
-            onStart={() => onStartMatch(match.id)}
-            onWalkover={() => onWalkover(match)}
-            onCorrect={() => onCorrect(match)}
-            onOpenRing={onOpenRing}
+            actions={actions}
           />
         </foreignObject>,
       );
@@ -136,15 +138,8 @@ function FighterRow({ name, corner, won, lost }: { name: string; corner: 'red' |
   );
 }
 
-/** A match: both fighters and one action row that says what can be done with it now. */
-function MatchCard({ match, isActive, onStart, onWalkover, onCorrect, onOpenRing }: {
-  match: BracketMatch;
-  isActive: boolean;
-  onStart: () => void;
-  onWalkover: () => void;
-  onCorrect: () => void;
-  onOpenRing: () => void;
-}) {
+/** A match: both fighters and one row that says what can be done with it now (or, read-only, where it stands). */
+function MatchCard({ match, isActive, actions }: { match: BracketMatch; isActive: boolean; actions?: BracketActions }) {
   const completed = match.status === 'COMPLETED';
   const bye = match.status === 'BYE';
   const ready = !!match.fighter_red_id && !!match.fighter_blue_id && match.status === 'PENDING';
@@ -158,19 +153,21 @@ function MatchCard({ match, isActive, onStart, onWalkover, onCorrect, onOpenRing
       <div className="border-t border-zinc-800/60" />
       <FighterRow name={match.fighter_blue_name || (bye ? 'Bye' : '')} corner="blue" won={blueWon} lost={completed && !blueWon} />
       <div style={{ height: FOOT_H }} className="flex border-t border-zinc-800/60 text-zinc-500">
-        {isActive ? (
-          <button onClick={onOpenRing} className={`${foot} bg-emerald-600/25 text-emerald-300 hover:bg-emerald-600/40`}>● On the ring — open</button>
+        {!actions ? (
+          <MatchStatusRow match={match} isActive={isActive} ready={ready} />
+        ) : isActive ? (
+          <button onClick={actions.onOpenRing} className={`${foot} bg-emerald-600/25 text-emerald-300 hover:bg-emerald-600/40`}>● On the ring — open</button>
         ) : ready ? (
           <>
-            <button onClick={onStart} className={`${foot} bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40`}><Swords size={12} /> Start fight</button>
-            <button onClick={onWalkover} title="Opponent did not show: win by walkover" className="px-3 h-full text-[11px] font-bold border-l border-zinc-800/60 hover:text-white hover:bg-zinc-800 cursor-pointer">WO</button>
+            <button onClick={() => actions.onStartMatch(match.id)} className={`${foot} bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40`}><Swords size={12} /> Start fight</button>
+            <button onClick={() => actions.onWalkover(match)} title="Opponent did not show: win by walkover" className="px-3 h-full text-[11px] font-bold border-l border-zinc-800/60 hover:text-white hover:bg-zinc-800 cursor-pointer">WO</button>
           </>
         ) : completed ? (
           <>
             <span className="flex-1 px-3 flex items-center text-[11px] font-bold uppercase text-zinc-400">
               {match.method}{match.votes ? ` ${match.votes}` : ''}{match.corrections?.length ? ' · corrected' : ''}
             </span>
-            <button onClick={onCorrect} className="px-3 h-full text-[11px] font-bold border-l border-zinc-800/60 hover:text-amber-400 hover:bg-zinc-800 cursor-pointer">Correct…</button>
+            <button onClick={() => actions.onCorrect(match)} className="px-3 h-full text-[11px] font-bold border-l border-zinc-800/60 hover:text-amber-400 hover:bg-zinc-800 cursor-pointer">Correct…</button>
           </>
         ) : (
           <span className="flex-1 flex items-center justify-center text-[11px] font-bold uppercase">{bye ? 'Passes without a fight' : 'Waiting for fighters'}</span>
@@ -178,4 +175,15 @@ function MatchCard({ match, isActive, onStart, onWalkover, onCorrect, onOpenRing
       </div>
     </div>
   );
+}
+
+/** The read-only card footer: where the match stands, no buttons. */
+function MatchStatusRow({ match, isActive, ready }: { match: BracketMatch; isActive: boolean; ready: boolean }) {
+  const text = 'flex-1 flex items-center justify-center text-[11px] font-bold uppercase tracking-wider';
+  if (isActive) return <span className={`${text} bg-emerald-600/25 text-emerald-300`}>● On the ring</span>;
+  if (match.status === 'COMPLETED') {
+    return <span className={`${text} text-zinc-400`}>{match.method}{match.votes ? ` ${match.votes}` : ''}{match.corrections?.length ? ' · corrected' : ''}</span>;
+  }
+  if (match.status === 'BYE') return <span className={text}>Passes without a fight</span>;
+  return <span className={text}>{ready ? 'Upcoming' : 'Waiting for fighters'}</span>;
 }

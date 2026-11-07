@@ -47,10 +47,12 @@ export default function BracketBoard({ tournament, category, bracket }: { tourna
       <BracketTree
         bracket={bracket}
         activeBracketMatchId={tournament.active_match_bracket_match_id}
-        onStartMatch={start}
-        onOpenRing={() => navigate('/')}
-        onWalkover={match => setDialog({ kind: 'walkover', match })}
-        onCorrect={match => setDialog({ kind: 'correct', match })}
+        actions={{
+          onStartMatch: start,
+          onOpenRing: () => navigate('/'),
+          onWalkover: match => setDialog({ kind: 'walkover', match }),
+          onCorrect: match => setDialog({ kind: 'correct', match }),
+        }}
       />
       {notice && (
         <div className="fixed bottom-4 inset-x-0 z-[90] flex justify-center pointer-events-none">

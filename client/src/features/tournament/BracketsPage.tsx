@@ -1,9 +1,10 @@
 import { Link, NavLink, useParams } from 'react-router-dom';
-import { Crown, Medal, Printer } from 'lucide-react';
-import type { Bracket, TournamentState, WeightCategory } from '../../api/protocol';
+import { Printer } from 'lucide-react';
+import type { TournamentState } from '../../api/protocol';
 import NavBar from '../../shared/NavBar';
 import BracketBoard from './BracketBoard';
 import { categoryLabel } from './categoryText';
+import Placings from './Placings';
 
 /** Every generated bracket, or one category's (/tournament/bracket/:categoryId), picked from a row of tabs. */
 export default function BracketsPage({ tournament }: { tournament: TournamentState }) {
@@ -47,20 +48,6 @@ export default function BracketsPage({ tournament }: { tournament: TournamentSta
           ))}
         </>
       )}
-    </div>
-  );
-}
-
-/** 1st, 2nd and both 3rd places as they become known (§8). */
-function Placings({ bracket, category }: { bracket: Bracket; category: WeightCategory }) {
-  const name = (id: string) => category.fighters.find(f => f.id === id)?.name ?? '';
-  const { first, second, third } = bracket.placings ?? { first: '', second: '', third: [] };
-  if (!first && !second && third.length === 0) return null;
-  return (
-    <div className="flex items-center gap-3 text-sm font-bold">
-      {first && <span className="text-amber-400 flex items-center gap-1"><Crown size={14} /> {name(first)}</span>}
-      {second && <span className="text-zinc-300 flex items-center gap-1"><Medal size={14} /> {name(second)}</span>}
-      {third.map(id => <span key={id} className="text-orange-400 flex items-center gap-1"><Medal size={14} /> {name(id)}</span>)}
     </div>
   );
 }

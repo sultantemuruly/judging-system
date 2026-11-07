@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { FightView } from '../../api/protocol';
 import { cornerName, resultLabel, winnerTextColor } from '../../shared/fightText';
 import { publicView } from '../../shared/publicView';
+import BoardHeader from './BoardHeader';
 import ActionLog from '../operator/ActionLog';
 import FightClock from '../operator/FightClock';
 import JudgeCards from '../operator/JudgeCards';
@@ -19,11 +20,7 @@ export default function BoardScreen({ view: full }: { view: FightView }) {
   const showScores = view.live_scores || (result.final && result.confirmed);
   return (
     <div className="min-h-screen lg:h-screen w-full flex flex-col items-center bg-zinc-950 lg:overflow-hidden">
-      <header className="w-full flex items-center justify-between px-4 h-14 border-b border-zinc-800 flex-shrink-0">
-        <h1 className="text-lg font-black text-white tracking-widest uppercase">
-          Kickboxing <span className="text-zinc-500 font-light">Live</span>
-        </h1>
-      </header>
+      <BoardHeader />
 
       <div className="flex-1 w-full max-w-7xl flex flex-col lg:flex-row gap-4 min-h-0 p-3 sm:p-4">
         <div className="flex-1 flex flex-col gap-4 min-h-0 lg:overflow-y-auto">
