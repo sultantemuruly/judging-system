@@ -75,11 +75,6 @@ type App struct {
 	smu      sync.Mutex
 	sessions access.Sessions
 
-	// amu guards the judges' seat passwords; nothing else is locked while it is held.
-	amu         sync.Mutex
-	passwords   access.Passwords
-	judgeLimits access.Limiter
-
 	// loginMu makes failed admin logins wait one after another, so the delay
 	// after each limits guessing overall, not per request.
 	loginMu     sync.Mutex
@@ -87,8 +82,8 @@ type App struct {
 	loginDelay  time.Duration
 
 	// Frames are numbered so a client never applies an older state over a newer one.
-	stateMu, tournamentMu, accessMu    sync.Mutex
-	stateSeq, tournamentSeq, accessSeq int64
+	stateMu, tournamentMu   sync.Mutex
+	stateSeq, tournamentSeq int64
 }
 
 // New loads the tournament, restores the fight that was on the ring and starts the hub.
@@ -104,10 +99,6 @@ func New(opts Options) (*App, error) {
 	a.admin = access.NewAdmin(opts.AdminLogin, opts.AdminPassword, secret)
 	if err := a.loadAdminSessions(); err != nil {
 		return nil, fmt.Errorf("read admin sessions: %w", err)
-	}
-	// Passwords first: the hub asks for them as soon as a device connects.
-	if err := a.loadJudgePasswords(); err != nil {
-		return nil, fmt.Errorf("read the judges' passwords: %w", err)
 	}
 	a.hub = ws.NewHub(a, a.nowMs)
 	go a.hub.Run()
@@ -212,9 +203,6 @@ func (a *App) HandleAction(s ws.Session, msg ws.Action) error {
 
 // Do applies an operator or admin action.
 func (a *App) Do(msg ws.Action) error {
-	if msg.Type == "SET_JUDGE_PASSWORD" {
-		return a.setJudgePassword(msg)
-	}
 	if handler, ok := tournamentActions[msg.Type]; ok {
 		return handler(a, msg)
 	}
@@ -222,7 +210,7 @@ func (a *App) Do(msg ws.Action) error {
 }
 
 func (a *App) Snapshot() [][]byte {
-	return [][]byte{a.stateFrame(), a.tournamentFrame(), a.judgeAccessFrame()}
+	return [][]byte{a.stateFrame(), a.tournamentFrame()}
 }
 
 func (a *App) SeatsChanged(seats [4]bool) {

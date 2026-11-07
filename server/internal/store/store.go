@@ -4,7 +4,6 @@
 //	current_fight           ID of the fight on the ring, so a restart can replay it
 //	heartbeat               "<fightID> <ms>": last moment the round clock was seen running
 //	tournament.json         categories and brackets, replaced atomically on each save
-//	judge_passwords.json    hashed seat passwords of the judges, replaced atomically
 //	admin_secret            random key behind the admin account's fingerprint
 //	admin_sessions.json     hashed admin login tokens and when they expire
 package store
@@ -32,7 +31,6 @@ const (
 	currentFile    = "current_fight"
 	heartbeatFile  = "heartbeat"
 	tournamentFile = "tournament.json"
-	passwordsFile  = "judge_passwords.json"
 	secretFile     = "admin_secret"
 	sessionsFile   = "admin_sessions.json"
 )
@@ -214,14 +212,6 @@ func (s *Store) LoadTournament(v any, legacyPath string) (bool, error) {
 	}
 	return true, json.Unmarshal(b, v)
 }
-
-// SaveJudgePasswords writes the judges' seat passwords atomically. They are
-// kept apart from tournament.json, which every device receives.
-func (s *Store) SaveJudgePasswords(v any) error { return s.saveJSON(passwordsFile, v) }
-
-// LoadJudgePasswords reads the judges' seat passwords into v; it reports
-// whether there were any saved.
-func (s *Store) LoadJudgePasswords(v any) (bool, error) { return s.loadJSON(passwordsFile, v) }
 
 // SaveAdminSessions writes the admin's login sessions atomically.
 func (s *Store) SaveAdminSessions(v any) error { return s.saveJSON(sessionsFile, v) }

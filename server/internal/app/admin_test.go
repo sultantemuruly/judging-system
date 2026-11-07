@@ -33,7 +33,7 @@ func TestViewerAndJudgesNeedNoAdminLogin(t *testing.T) {
 	url, _, _ := wsServer(t)
 	for _, q := range []string{"role=viewer", "role=judge&seat=1&device=a"} {
 		f := dial(t, url, q).next("first frame", func(ws.Frame) bool { return true })
-		if f.Type == ws.TypeAdminAuthFailed || f.Type == ws.TypeJudgeAuthFailed {
+		if f.Type == ws.TypeAdminAuthFailed {
 			t.Fatalf("%s refused", q)
 		}
 	}

@@ -21,16 +21,13 @@ func getSeats(t *testing.T, a *App) judgeSeats {
 	return s
 }
 
-func TestSeatsSaysWhichAreTakenAndLocked(t *testing.T) {
+func TestSeatsSaysWhichAreTaken(t *testing.T) {
 	a, _, _ := newTestApp(t)
 	if s := getSeats(t, a); s != (judgeSeats{}) {
-		t.Fatalf("fresh app: %+v, want nothing taken or locked", s)
+		t.Fatalf("fresh app: %+v, want nothing taken", s)
 	}
 	a.ring.SetSeats([4]bool{false, false, true, false})
-	if err := a.act("SET_JUDGE_PASSWORD", map[string]any{"seat": 3, "password": "4821"}); err != nil {
-		t.Fatal(err)
-	}
-	want := judgeSeats{Protected: [3]bool{false, false, true}, Occupied: [3]bool{false, true, false}}
+	want := judgeSeats{Occupied: [3]bool{false, true, false}}
 	if s := getSeats(t, a); s != want {
 		t.Fatalf("got %+v, want %+v", s, want)
 	}

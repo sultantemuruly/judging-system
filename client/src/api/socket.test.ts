@@ -27,7 +27,7 @@ class FakeSocket {
   /** The HELLO frame, which must be the first thing sent after opening. */
   hello() {
     expect(this.sent[0]?.type).toBe('HELLO');
-    return this.sent[0].payload as { device: string; password?: string; token?: string };
+    return this.sent[0].payload as { device: string; token?: string };
   }
   queueStatuses() { return this.sent.filter(f => f.type === 'QUEUE_STATUS').map(f => (f.payload as { pending: number }).pending); }
 }
@@ -105,49 +105,9 @@ describe('socket', () => {
     expect(ws.queueStatuses()).toEqual([]);
   });
 
-  it('stops reconnecting when the seat password is refused, and keeps the taps', async () => {
+  it('the judge picker and the board connect as viewers', async () => {
     const socket = await loadSocket();
-    socket.connect({ role: 'judge', seat: 1 });
-    const first = FakeSocket.instances[0];
-    socket.sendAction('REGISTER_HIT', { corner: 'Red' });
-    first.open();
-    expect(first.hello().password).toBeUndefined();
-    first.receive({ type: 'JUDGE_AUTH_FAILED', payload: { seat: 1 } });
-    first.onclose?.();
-
-    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', wrongPassword: false, pending: 1 });
-    vi.advanceTimersByTime(30_000);
-    expect(FakeSocket.instances).toHaveLength(1);
-
-    socket.unlockSeat('4821');
-    const second = FakeSocket.instances[1];
-    second.open();
-    expect(second.hello().password).toBe('4821');
-    expect(second.sent.some(f => f.type === 'REGISTER_HIT' && f.offline)).toBe(true);
-  });
-
-  it('remembers the seat password and says when it stops working', async () => {
-    const socket = await loadSocket();
-    socket.connect({ role: 'judge', seat: 2 });
-    socket.unlockSeat('old');
-    const ws = FakeSocket.instances.at(-1)!;
-    ws.open();
-    expect(ws.hello().password).toBe('old');
-    ws.receive({ type: 'JUDGE_AUTH_FAILED', payload: { seat: 2 } });
-    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', wrongPassword: true });
-  });
-
-  it('tracks which seats need a password', async () => {
-    const socket = await loadSocket();
-    socket.connect({ role: 'viewer' });
-    const ws = FakeSocket.instances[0];
-    ws.open();
-    ws.receive({ type: 'JUDGE_ACCESS', seq: 1, payload: { protected: [true, false, true] } });
-    expect(socket.getJudgeAccess().protected).toEqual([true, false, true]);
-  });
-
-  it('the judge picker connects as a viewer', async () => {
-    const socket = await loadSocket();
+    expect(socket.sessionForPath('/board')).toEqual({ role: 'viewer' });
     expect(socket.sessionForPath('/judge')).toEqual({ role: 'viewer' });
     expect(socket.sessionForPath('/judge/')).toEqual({ role: 'viewer' });
     expect(socket.sessionForPath('/judge/2')).toEqual({ role: 'judge', seat: 2 });
@@ -161,7 +121,7 @@ describe('socket', () => {
     expect(first.hello().token).toBeUndefined();
     first.receive({ type: 'ADMIN_AUTH_FAILED', payload: {} });
     first.onclose?.();
-    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', wrongPassword: false });
+    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', sessionExpired: false });
     vi.advanceTimersByTime(30_000);
     expect(FakeSocket.instances).toHaveLength(1);
 
@@ -188,26 +148,6 @@ describe('socket', () => {
     expect(FakeSocket.instances).toHaveLength(1);
   });
 
-  it('shows how long a seat is locked out after too many wrong passwords', async () => {
-    const socket = await loadSocket();
-    socket.connect({ role: 'judge', seat: 1 });
-    socket.unlockSeat('bad');
-    const ws = FakeSocket.instances.at(-1)!;
-    ws.open();
-    ws.receive({ type: 'JUDGE_AUTH_FAILED', payload: { seat: 1, retry_after_ms: 30_000 } });
-    expect(socket.getConnectionInfo()).toMatchObject({ status: 'locked', retryAfterMs: 30_000 });
-  });
-
-  it('can retry a seat without a password after it was removed', async () => {
-    const socket = await loadSocket();
-    socket.connect({ role: 'judge', seat: 2 });
-    socket.unlockSeat('old');
-    socket.unlockSeat('');
-    const ws = FakeSocket.instances.at(-1)!;
-    ws.open();
-    expect(ws.hello().password).toBeUndefined();
-  });
-
   it('reports a locked admin login with its wait', async () => {
     const socket = await loadSocket();
     socket.connect({ role: 'operator' });
@@ -215,14 +155,12 @@ describe('socket', () => {
     expect(await socket.loginAdmin('admin', 'x')).toEqual({ ok: false, reason: 'too_many_attempts', retryAfterS: 30 });
   });
 
-  it('keeps the device and credentials out of the URL, which proxies log', async () => {
+  it('keeps the device out of the URL, which proxies log', async () => {
     const socket = await loadSocket();
     socket.connect({ role: 'judge', seat: 3 });
-    socket.unlockSeat('4821');
     const ws = FakeSocket.instances.at(-1)!;
     expect([...new URL(ws.url).searchParams.keys()].sort()).toEqual(['role', 'seat']);
     ws.open();
-    expect(ws.hello()).toMatchObject({ password: '4821' });
     expect(ws.hello().device).toBeTruthy();
   });
 
@@ -241,7 +179,7 @@ describe('socket', () => {
 
   it('asks the server which seats are locked and taken', async () => {
     const socket = await loadSocket();
-    const seats = { protected: [false, true, false], occupied: [true, false, false] };
+    const seats = { occupied: [true, false, false] };
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => seats })));
     expect(await socket.fetchJudgeSeats()).toEqual(seats);
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('offline'); }));

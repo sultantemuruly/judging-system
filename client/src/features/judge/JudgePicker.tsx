@@ -1,6 +1,6 @@
 import JudgeSeatLinks from '../../shared/JudgeSeatLinks';
 
-/** /judge: where a judge picks their seat. A seat with a lock asks for its password next. */
+/** /judge: where a judge picks their seat. */
 export default function JudgePicker() {
   return (
     <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-4 p-4">

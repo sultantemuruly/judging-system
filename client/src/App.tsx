@@ -6,6 +6,7 @@ import OperatorScreen from './features/operator/OperatorScreen'
 import JudgeScreen from './features/judge/JudgeScreen'
 import JudgePicker from './features/judge/JudgePicker'
 import ViewerScreen from './features/viewer/ViewerScreen'
+import BoardScreen from './features/viewer/BoardScreen'
 import BracketSetup from './features/tournament/BracketSetup'
 import BracketsPage from './features/tournament/BracketsPage'
 import MatchSchedule from './features/tournament/MatchSchedule'
@@ -30,14 +31,14 @@ function SessionSync() {
   return null
 }
 
-/** The operator's pages need the admin login; judge and viewer pages don't. */
+/** The operator's pages need the admin login; judge, viewer and board pages don't. */
 function AdminGate({ children }: { children: ReactNode }) {
   const { pathname } = useLocation()
-  const { session, status, wrongPassword } = useConnection()
+  const { session, status, sessionExpired } = useConnection()
   // Only the operator's own refusal locks the page, not the status a judge or
   // viewer page left behind just before this one's connection starts.
   if (sessionForPath(pathname).role === 'operator' && session.role === 'operator' && status === 'locked') {
-    return <AdminLogin expired={wrongPassword} />
+    return <AdminLogin expired={sessionExpired} />
   }
   return <>{children}</>
 }
@@ -61,6 +62,7 @@ function App() {
           <Route path="/judge" element={<JudgePicker />} />
           <Route path="/judge/:id" element={<JudgeScreen view={state} />} />
           <Route path="/viewer" element={<ViewerScreen view={state} />} />
+          <Route path="/board" element={<BoardScreen view={state} />} />
           <Route path="/tournament/setup" element={<BracketSetup tournament={tournament} />} />
           <Route path="/tournament/brackets" element={<BracketsPage tournament={tournament} />} />
           <Route path="/tournament/brackets/all" element={<Navigate to="/tournament/brackets" replace />} />

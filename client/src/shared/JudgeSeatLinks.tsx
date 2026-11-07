@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Lock, Smartphone } from 'lucide-react';
+import { Smartphone } from 'lucide-react';
 import { fetchJudgeSeats } from '../api/socket';
 import ConfirmDialog from './ConfirmDialog';
 import { seatChoice, type KnownSeats, type SeatChoice } from './seatChoice';
@@ -11,7 +11,7 @@ const REFRESH_MS = 3_000;
 const seatButton =
   'w-full py-8 bg-zinc-800 active:bg-zinc-700 hover:bg-zinc-700 rounded-2xl text-white text-3xl font-black flex items-center justify-center gap-3 touch-manipulation';
 
-/** Which seats are locked and taken, asked again every few seconds while the page is visible. */
+/** Which seats are taken, asked again every few seconds while the page is visible. */
 function useJudgeSeats(): KnownSeats | null {
   const [state, setState] = useState<KnownSeats | null>(null);
   useEffect(() => {
@@ -40,8 +40,7 @@ const askText: Record<Exclude<SeatChoice, 'go'>, { title: (seat: number) => stri
 };
 
 /**
- * One button per judge seat; a lock marks a seat that asks for its password
- * next, a phone one that already has a judge on it. Taking a seat disconnects
+ * One button per judge seat; a phone marks one that already has a judge on it. Taking a seat disconnects
  * the phone on it, so that asks first: the start screen is open on every
  * device, and one stray tap must not stop a judge scoring.
  */
@@ -78,7 +77,6 @@ export default function JudgeSeatLinks() {
         <Link key={seat} to={`/judge/${seat}`} onClick={e => pick(e, seat)} aria-busy={busySeat === seat}
           className={`${seatButton} ${busySeat === seat ? 'opacity-60' : ''}`}>
           Судья {seat}
-          {known?.seats.protected[seat - 1] && <Lock size={22} className="text-zinc-400" aria-label="нужен пароль" />}
           {known?.seats.occupied[seat - 1] && <Smartphone size={22} className="text-emerald-400" aria-label="уже подключён" />}
         </Link>
       ))}

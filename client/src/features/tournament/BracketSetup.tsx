@@ -8,7 +8,6 @@ import NavBar from '../../shared/NavBar';
 import CategoryDialog from './CategoryDialog';
 import FighterForm from './FighterForm';
 import GenerateBracketDialog from './GenerateBracketDialog';
-import JudgePasswords from './JudgePasswords';
 import { categoryLabel, formatLabel } from './categoryText';
 
 type Dialog =
@@ -66,7 +65,6 @@ export default function BracketSetup({ tournament }: { tournament: TournamentSta
               );
             })}
           </div>
-          <JudgePasswords />
         </aside>
 
         {/* Right: the selected category */}
